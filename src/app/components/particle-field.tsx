@@ -255,6 +255,14 @@ export function ParticleField({ subscribe, energy: level }: { subscribe: Session
       }
       if (motionQuery.matches) return;
 
+      // 自分で鳴らした音も、ソロの音と同じように粒を散らす
+      if (event.kind === "jam") {
+        for (const pitch of event.pitches) {
+          onEvent({ kind: "note", pitch, velocity: 0.6, durationSeconds: 0.3 });
+        }
+        return;
+      }
+
       if (event.kind === "beat") {
         const now = performance.now();
         const interval = (now - lastBeatAt) / 1000;

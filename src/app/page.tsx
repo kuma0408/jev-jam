@@ -139,6 +139,8 @@ export default function Page() {
             chosenByUser={session.chosenByUser}
             locked={session.locked}
             choose={choose}
+            tones={session.tones}
+            playTone={playTone}
             subscribe={session.subscribe}
             currentChord={session.chord}
             bpm={session.settings.bpm}
@@ -167,7 +169,7 @@ export default function Page() {
           </div>
         </section>
 
-        <JamPad playing={playing} tones={session.tones} touch={session.touch} onTap={tap} onTone={playTone} />
+        <JamPad playing={playing} touch={session.touch} onTap={tap} />
         <EnergyDial
           energy={session.settings.energy}
           live={session.liveEnergy}

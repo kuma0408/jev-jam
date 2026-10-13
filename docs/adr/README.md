@@ -26,3 +26,4 @@
 | [0020](0020-expression-curves-and-feedback-fixes.md) | 一音の中の音程と音量を曲線で動かし、聴いた指摘を直す | 工夫 | Accepted | 2026-10-13 |
 | [0021](0021-ties-across-bars-and-landing.md) | 小節をまたいで音を伸ばせるようにし、小節の頭の抜けを減らす | 検証結果 | Accepted | 2026-10-13 |
 | [0022](0022-chord-deadline-and-legato.md) | コード選択に締切を設け、最後の1拍を次のコードへ向かわせる。音の切れ目をなめらかにする | 設計判断 | Accepted | 2026-10-13 |
+| [0023](0023-instant-jam-notes-on-the-piano.md) | 自分で鳴らす音を、押した瞬間に鳴らし、鍵盤に表示する | 苦労と解決 | Accepted | 2026-10-13 |

@@ -738,6 +738,49 @@ input {
   color: var(--ink-soft);
 }
 
+/* ---- 自分で鳴らせる音の印 ---- */
+
+/* いまのコードの構成音の鍵に、対応するパソコンのキーを出す */
+.piano-jam {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  margin-bottom: 4px;
+  padding: 0 6px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: var(--font-latin);
+  font-size: 0.875rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.is-black .piano-jam {
+  border-color: var(--paper);
+}
+
+/* 鳴らした瞬間、その鍵と印を光らせる */
+.piano-note[data-hit="true"] .piano-jam {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--paper);
+  transform: scale(1.12);
+}
+
+.piano-note.is-white[data-hit="true"] {
+  background: linear-gradient(to bottom, #fff 30%, #cfdcff);
+}
+
+.piano-note.is-black[data-hit="true"] {
+  background: linear-gradient(to bottom, #2a2550 30%, #3b57c9);
+}
+
 /* ---- 次のコードが確定した後の鍵盤 ---- */
 
 /* 4拍目に入ると選び直せない。選ばれなかった候補と鍵を沈め、進む先だけを浮かび上がらせる */
@@ -797,7 +840,7 @@ input {
 
 .jam-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 

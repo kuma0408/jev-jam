@@ -55,8 +55,8 @@ export type SessionSettings = {
 export const JAM_TONE_COUNT = 4;
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
 const JAM_TONE_BASE = 72;
-/** 自分で弾く音を、自動の伴奏よりどれだけ大きくするか（dB） */
-const JAM_BOOST_DB = 8;
+/** 自分で弾く音を、自動の伴奏よりどれだけ大きくするか（dB）。8では大きすぎた */
+const JAM_BOOST_DB = 4;
 
 /** 音が実際に鳴るタイミングで届く通知。背景の演出などに使う */
 export type SessionEvent =
@@ -64,7 +64,9 @@ export type SessionEvent =
   /** beat は小節内の拍（0〜3） */
   | { kind: "beat"; beat: number }
   /** ソロの1音。velocity は強さ（0〜1） */
-  | { kind: "note"; pitch: number; velocity: number; durationSeconds: number };
+  | { kind: "note"; pitch: number; velocity: number; durationSeconds: number }
+  /** ユーザーが自分で鳴らした音（MIDIノート番号） */
+  | { kind: "jam"; pitches: number[] };
 
 export type BarLog = {
   bar: number;
@@ -189,7 +191,8 @@ export function useSession(): Session {
   const listenersRef = useRef(new Set<(event: SessionEvent) => void>());
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [settings, setSettings] = useState<SessionSettings>({
-    bpm: 120,
+    // 聴いた評価で、60〜90BPMが音楽としていちばん成り立った
+    bpm: 80,
     strategy: "cells",
     voice: "sax-recorded",
     soloDb: 0,
@@ -644,7 +647,7 @@ export function useSession(): Session {
     engine.comp.triggerAttackRelease(
       compVoicing(candidate).map((pitch) => tone.Frequency(pitch + 12, "midi").toFrequency()),
       0.35,
-      tone.now(),
+      tone.immediate(),
       0.3,
     );
   }, []);
@@ -665,15 +668,16 @@ export function useSession(): Session {
     const { tone } = engine;
     // いちばん上の音を1オクターブ上にも重ねて、輪郭をはっきりさせる
     const voicing = compVoicing(current);
+    emit({ kind: "jam", pitches: voicing });
     engine.jam.triggerAttackRelease(
       [...voicing, voicing.at(-1)! + 12].map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
       0.4,
-      tone.now(),
+      tone.immediate(),
       0.9,
     );
     engine.lastCompTapBar = engine.bar;
     recordTap(engine);
-  }, [recordTap]);
+  }, [emit, recordTap]);
 
   const playTone = useCallback(
     (index: number) => {
@@ -683,15 +687,16 @@ export function useSession(): Session {
       const note = chordTones(current)[index];
       if (note === undefined) return;
       const { tone } = engine;
+      emit({ kind: "jam", pitches: [JAM_TONE_BASE + pitchClassOf(note)] });
       engine.jam.triggerAttackRelease(
         tone.Frequency(JAM_TONE_BASE + pitchClassOf(note), "midi").toFrequency(),
         0.6,
-        tone.now(),
+        tone.immediate(),
         0.95,
       );
       recordTap(engine);
     },
-    [recordTap],
+    [emit, recordTap],
   );
 
   const updateSettings = useCallback((patch: Partial<SessionSettings>) => {

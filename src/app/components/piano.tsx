@@ -1,10 +1,14 @@
 "use client";
 
 // 次のコードを選ぶ鍵盤。1オクターブぶんの鍵の上に、そのルートから始まる候補を1〜2個並べる。
-import type { CSSProperties } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { NOTE_NAMES, parseChord } from "../../lib/music/chord.ts";
 import type { Session } from "../session/use-session.ts";
 import { BarTimer } from "./bar-timer.tsx";
+import { JAM_KEYS } from "./jam-pad.tsx";
+
+/** 自分で鳴らした鍵を光らせておく長さ（ミリ秒） */
+const HIT_FLASH_MS = 220;
 
 type Candidate = Session["candidates"][number];
 type Adventure = Candidate["adventure"];
@@ -42,7 +46,10 @@ export function AdventureMark({ level }: { level: Adventure }) {
   );
 }
 
-type Props = Pick<Session, "candidates" | "nextChord" | "chosenByUser" | "locked" | "choose" | "subscribe"> & {
+type Props = Pick<
+  Session,
+  "candidates" | "nextChord" | "chosenByUser" | "locked" | "choose" | "subscribe" | "tones" | "playTone"
+> & {
   /** いま鳴っているコード。停止中は null */
   currentChord: string | null;
   bpm: number;
@@ -56,11 +63,29 @@ export function Piano({
   locked,
   choose,
   subscribe,
+  tones,
+  playTone,
   currentChord,
   bpm,
   playing,
 }: Props) {
   const currentRoot = currentChord === null ? null : parseChord(currentChord).root;
+
+  // 自分で鳴らした音の鍵を、短く光らせる
+  const [hits, setHits] = useState<ReadonlySet<number>>(new Set());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = subscribe((event) => {
+      if (event.kind !== "jam") return;
+      setHits(new Set(event.pitches.map((pitch) => pitch % 12)));
+      clearTimeout(timer);
+      timer = setTimeout(() => setHits(new Set()), HIT_FLASH_MS);
+    });
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [subscribe]);
 
   return (
     // 4拍目に入ると次のコードが確定する。確定後は、進む先だけを残して鍵盤全体を沈める
@@ -80,6 +105,9 @@ export function Piano({
             .filter(({ candidate }) => parseChord(candidate.chord).root === pitchClass);
           const next = options.find(({ candidate }) => candidate.chord === nextChord);
           const isCurrent = currentRoot === pitchClass;
+          // この鍵が、自分で鳴らせる音（いまのコードの構成音）の何番目か
+          const toneIndex = tones.indexOf(note);
+          const jamKey = JAM_KEYS[toneIndex];
           return (
             <div
               key={note}
@@ -87,6 +115,7 @@ export function Piano({
               style={{ "--slot": slot } as CSSProperties}
               data-open={options.length > 0}
               data-next={next ? next.candidate.adventure : undefined}
+              data-hit={hits.has(pitchClass)}
             >
               <div className="piano-options">
                 {options.map(({ candidate, index }) => {
@@ -118,6 +147,26 @@ export function Piano({
                   );
                 })}
               </div>
+              {/* 鳴らせる音の鍵には、対応するパソコンのキーを出す。押しても鳴る */}
+              {jamKey && (
+                <button
+                  type="button"
+                  className="piano-jam"
+                  aria-label={`${note} の音を弾く（${jamKey.toUpperCase()}キー）`}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    playTone(toneIndex);
+                  }}
+                  onKeyDown={(event) => {
+                    if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
+                      event.preventDefault();
+                      playTone(toneIndex);
+                    }
+                  }}
+                >
+                  {jamKey.toUpperCase()}
+                </button>
+              )}
               <span className="piano-name" data-current={isCurrent}>
                 {note}
                 {isCurrent && <span className="visually-hidden">（いまのコードのルート）</span>}
