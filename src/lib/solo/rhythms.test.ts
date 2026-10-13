@@ -4,6 +4,7 @@ import {
   TIE_RHYTHMS,
   boostSixteenths,
   favorDownbeat,
+  holdBackTies,
   leadsOut,
   rhythmById,
   rhythmsFor,
@@ -195,5 +196,17 @@ describe("favorDownbeat（小節の頭から鳴るリズムを選ばれやすく
     for (const value of Object.values(favorDownbeat(odds))) {
       expect(value).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("holdBackTies（持ち越しを選ばれにくくする）", () => {
+  it("持ち越しのリズムの確率だけを下げる", () => {
+    const adjusted = holdBackTies({ "r-tie-long": 0.1, "r-half": 0.1 });
+    expect(adjusted["r-tie-long"]).toBeLessThan(0.1);
+    expect(adjusted["r-half"]).toBe(0.1);
+  });
+
+  it("確率を0にはしない（持ち越しは残す）", () => {
+    expect(holdBackTies({ "r-tie-short": 0.1 })["r-tie-short"]).toBeGreaterThan(0);
   });
 });
