@@ -163,6 +163,19 @@ describe("renderCells", () => {
     expect(aimedLow).toBe(62);
   });
 
+  it("高さの目標があるときは、フレーズの最初の音ではなく、フレーズ全体の真ん中を目標に合わせる", () => {
+    // ルートから7thまで上がるフレーズ（幅10半音）。最初の音を目標に合わせると、全体は目標より上に偏る
+    const notes = renderCells([cell(eighths([0, 2, 4, 6])), REST], "Dm7", {
+      previousPitch: 70,
+      ...range,
+      ...plain,
+      targetPitch: 70,
+    });
+    const mean = notes.reduce((sum, note) => sum + note.pitch, 0) / notes.length;
+    expect(Math.abs(mean - 70)).toBeLessThanOrEqual(6);
+    expect(notes[0]!.pitch).toBeLessThan(70);
+  });
+
   it("高さの目標があっても、持ち越しの音の高さは変えない", () => {
     const tie = cell([{ at: 0, dur: 1, step: 0, tie: true }]);
     const notes = renderCells([tie, REST], "Dm7", { previousPitch: 64, ...range, ...plain, targetPitch: 80 });

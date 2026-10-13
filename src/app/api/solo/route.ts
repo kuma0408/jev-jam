@@ -105,7 +105,10 @@ function fail(reason: string): never {
 
 function parseMemo(value: unknown): SoloMemo {
   if (typeof value !== "object" || value === null) fail("本体がオブジェクトではない");
-  const { cells, dynamics, choices, history, relation } = value as Record<string, unknown>;
+  const { cells, dynamics, choices, history, relation, intensity, shape, arc, pastShapes, pastArcs } = value as Record<
+    string,
+    unknown
+  >;
   const memo: SoloMemo = {};
 
   if (cells !== undefined) {
@@ -122,6 +125,17 @@ function parseMemo(value: unknown): SoloMemo {
       bars.push({ chord, cells: barCells });
     }
     memo.history = bars;
+  }
+  // 選ばれたものの名前をそのまま送り返してもらう項目。IDとして使える文字だけを通す
+  for (const [name, text] of Object.entries({ intensity, shape, arc })) {
+    if (text === undefined) continue;
+    if (typeof text !== "string" || !/^[a-z0-9-]{1,40}$/.test(text)) fail(`memo.${name}`);
+    memo[name as "intensity" | "shape" | "arc"] = text;
+  }
+  for (const [name, ids] of Object.entries({ pastShapes, pastArcs })) {
+    if (ids === undefined) continue;
+    if (!isCellIds(ids)) fail(`memo.${name}`);
+    memo[name as "pastShapes" | "pastArcs"] = ids;
   }
   if (relation !== undefined) {
     if (typeof relation !== "string" || !/^[a-z-]{1,20}$/.test(relation)) fail("memo.relation");

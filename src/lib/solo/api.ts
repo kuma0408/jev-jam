@@ -35,6 +35,16 @@ export type SoloMemo = {
   history?: { chord: string; cells: string[] }[];
   /** cells の方式: 直前の小節で選ばれた、その前のフレーズとの関係 */
   relation?: string;
+  /** cells の方式: 直前の小節の、小節内での強さの動き */
+  intensity?: string;
+  /** cells の方式: いまの4小節のまとまりの形（どこを吹いてどこを休むか）のID */
+  shape?: string;
+  /** cells の方式: いまの4小節のまとまりの、高さの流れのID */
+  arc?: string;
+  /** cells の方式: これまでのまとまりで使った形のID（新しい順、3つまで） */
+  pastShapes?: string[];
+  /** cells の方式: これまでのまとまりで使った高さの流れのID（新しい順、3つまで） */
+  pastArcs?: string[];
   /** 1音ずつの方式: スロットごとの選択 */
   choices?: SlotChoice[];
 };

@@ -32,7 +32,8 @@ const picks = {
   shape: "crescendo",
   // 1小節目は「前半を吹き、後半を休む」形
   phrase_shape: "p-build",
-  register_arc: "a-middle",
+  // 1小節目は低い音域を目指す流れ（直前の音 D4 の近くから始まる）
+  register_arc: "a-low",
 };
 
 describe("generatePhraseBars", () => {
@@ -129,7 +130,7 @@ describe("generatePhraseBars", () => {
       history: [{ chord: "Dm7", cells }],
       intensity: "crescendo",
       shape: "p-build",
-      arc: "a-middle",
+      arc: "a-low",
     });
   });
 
@@ -416,7 +417,8 @@ describe("generatePhraseBars（4小節の形と高さの流れ）", () => {
       });
       return bar!.notes.reduce((sum, note) => sum + note.pitch, 0) / bar!.notes.length;
     };
-    expect(await mean(3)).toBeGreaterThan((await mean(0)) + 6);
+    // 登る流れの2小節目と4小節目を比べる（1小節目は流れを選び直す小節なので使わない）
+    expect(await mean(3)).toBeGreaterThan((await mean(1)) + 6);
   });
 
   it("新しいまとまりに入るとき、直前までの形と流れを覚えておく（同じものの繰り返しを避けるため）", async () => {
