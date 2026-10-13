@@ -420,3 +420,17 @@ export function favorDownbeat(probabilities: Record<string, number>): Record<str
     }),
   );
 }
+
+/**
+ * 持ち越しのリズムに掛ける倍率。Jevは「前の音がまだ鳴っている」と伝えられると、持ち越しの4種に
+ * 合計で平均74%の確率を置く（実測）。そのまま使うと小節の34〜50%が持ち越しで始まり、
+ * 聴いた評価で「少し多い」となった。頭ではっきり吹き始める小節を増やすため、大きく下げる
+ */
+const TIE_FACTOR = 0.1;
+const TIE_IDS = new Set(TIE_RHYTHMS.map((rhythm) => rhythm.id));
+
+export function holdBackTies(probabilities: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => [id, TIE_IDS.has(id) ? probability * TIE_FACTOR : probability]),
+  );
+}

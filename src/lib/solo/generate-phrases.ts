@@ -13,6 +13,7 @@ import {
   TIE_RHYTHMS,
   boostSixteenths,
   favorDownbeat,
+  holdBackTies,
   leadsOut,
   rhythmById,
   rhythmsFor,
@@ -310,14 +311,17 @@ export async function generatePhraseBars(
     const keepRhythm = canKeepRhythm && (relation === "develop-rhythm" || relation === "echo");
     const keepContour = relation === "develop-melody" || relation === "echo";
     // Jevが持ち越しを選んだら、前との関係より優先する。音をつなぐ意図のほうが強い選択だから
-    const sampled = pickRhythm(favorDownbeat(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds), used);
+    const sampled = pickRhythm(
+      holdBackTies(favorDownbeat(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds)),
+      used,
+    );
     const rhythm = sampled.hits[0]?.tie
       ? sampled
       : keepRhythm && motifRhythm
         ? motifRhythm
         : relation === "space"
           ? // 間で応えるときは、頭から鳴るリズムへの優遇を掛けず、音数の少ないリズムに寄せる
-            pickRhythm(rhythmOdds, used, 1)
+            pickRhythm(holdBackTies(rhythmOdds), used, 1)
           : sampled;
     const contour =
       keepContour && motifContour

@@ -16,9 +16,15 @@ const MAX_MEMO_HISTORY = 4;
 const BARS_PER_PHRASE = 4;
 
 export async function POST(request: Request): Promise<Response> {
-  const body = parseRequest(await request.json().catch(() => null));
-  if (!body) {
-    return Response.json({ error: "リクエストの形式が正しくありません" }, { status: 400 });
+  const raw: unknown = await request.json().catch(() => null);
+  let body: SoloRequest;
+  try {
+    body = parseRequest(raw);
+  } catch (cause) {
+    if (!(cause instanceof InvalidRequest)) throw cause;
+    // どの項目で弾いたかが分からないと原因を追えないので、条件と受け取った内容をログに残す
+    console.warn(`リクエストを受け付けませんでした: ${cause.message}`, JSON.stringify(raw)?.slice(0, 600));
+    return Response.json({ error: "リクエストの形式が正しくありません", reason: cause.message }, { status: 400 });
   }
 
   // キーはサーバー側だけで読み、ブラウザには渡さない
@@ -90,68 +96,86 @@ function isCellIds(value: unknown): value is string[] {
   );
 }
 
-function parseMemo(value: unknown): SoloMemo | null {
-  if (typeof value !== "object" || value === null) return null;
+/** リクエストの検証に失敗したことを表す。どの条件で弾いたかを持つ */
+class InvalidRequest extends Error {}
+
+function fail(reason: string): never {
+  throw new InvalidRequest(reason);
+}
+
+function parseMemo(value: unknown): SoloMemo {
+  if (typeof value !== "object" || value === null) fail("本体がオブジェクトではない");
   const { cells, dynamics, choices, history, relation } = value as Record<string, unknown>;
   const memo: SoloMemo = {};
 
   if (cells !== undefined) {
-    if (!isCellIds(cells)) return null;
+    if (!isCellIds(cells)) fail("memo.cells");
     memo.cells = cells;
   }
   if (history !== undefined) {
-    if (!Array.isArray(history) || history.length > MAX_MEMO_HISTORY) return null;
+    if (!Array.isArray(history) || history.length > MAX_MEMO_HISTORY) fail("memo.history");
     const bars: NonNullable<SoloMemo["history"]> = [];
     for (const entry of history) {
-      if (typeof entry !== "object" || entry === null) return null;
+      if (typeof entry !== "object" || entry === null) fail("memo.history の要素");
       const { chord, cells: barCells } = entry as Record<string, unknown>;
-      if (typeof chord !== "string" || !KNOWN_CHORDS.includes(chord) || !isCellIds(barCells)) return null;
+      if (typeof chord !== "string" || !KNOWN_CHORDS.includes(chord) || !isCellIds(barCells)) fail("memo.history の chord または cells");
       bars.push({ chord, cells: barCells });
     }
     memo.history = bars;
   }
   if (relation !== undefined) {
-    if (typeof relation !== "string" || !/^[a-z-]{1,20}$/.test(relation)) return null;
+    if (typeof relation !== "string" || !/^[a-z-]{1,20}$/.test(relation)) fail("memo.relation");
     memo.relation = relation;
   }
   if (dynamics !== undefined) {
-    if (typeof dynamics !== "string" || !/^[a-z-]{1,20}$/.test(dynamics)) return null;
+    if (typeof dynamics !== "string" || !/^[a-z-]{1,20}$/.test(dynamics)) fail("memo.dynamics");
     memo.dynamics = dynamics;
   }
   if (choices !== undefined) {
-    if (!Array.isArray(choices) || choices.length > SLOTS_PER_BAR) return null;
-    if (!choices.every((choice) => typeof choice === "string" && SLOT_CHOICES.includes(choice))) return null;
+    if (!Array.isArray(choices) || choices.length > SLOTS_PER_BAR) fail("memo.choices の数");
+    if (!choices.every((choice) => typeof choice === "string" && SLOT_CHOICES.includes(choice))) fail("memo.choices の値");
     memo.choices = choices as SlotChoice[];
   }
   return memo;
 }
 
-function parseRequest(value: unknown): SoloRequest | null {
-  if (typeof value !== "object" || value === null) return null;
-  const { chords, strategy, bpm, previousPitch, range, energy, touch, barInPhrase, sustained, retargetable } =
-    value as Record<string, unknown>;
+function parseRequest(value: unknown): SoloRequest {
+  if (typeof value !== "object" || value === null) fail("本体がオブジェクトではない");
+  // 後から足した項目（energy 以降）は、送られてこなければ既定値で受け付ける。
+  // 開発中に画面とサーバーの更新がずれても、開いたままの画面が止まらないようにするため
+  const {
+    chords,
+    strategy,
+    bpm,
+    previousPitch,
+    range,
+    energy = 2,
+    touch = "none",
+    barInPhrase = 0,
+    sustained = false,
+    retargetable = false,
+  } = value as Record<string, unknown>;
 
-  if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) return null;
-  if (!chords.every((chord) => typeof chord === "string" && KNOWN_CHORDS.includes(chord))) return null;
+  if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) fail("chords の数");
+  if (!chords.every((chord) => typeof chord === "string" && KNOWN_CHORDS.includes(chord))) fail("chords に一覧に無いコードがある");
   const strategyValue = SOLO_STRATEGIES.find((option) => option === strategy);
-  if (!strategyValue) return null;
-  if (typeof bpm !== "number" || !(bpm >= 40 && bpm <= 240)) return null;
-  if (!isMidiPitch(previousPitch)) return null;
-  if (!isEnergy(energy)) return null;
+  if (!strategyValue) fail("strategy");
+  if (typeof bpm !== "number" || !(bpm >= 40 && bpm <= 240)) fail("bpm は 40〜240");
+  if (!isMidiPitch(previousPitch)) fail("previousPitch");
+  if (!isEnergy(energy)) fail("energy は 1〜4");
   const touchValue = TOUCHES.find((option) => option === touch);
-  if (!touchValue) return null;
+  if (!touchValue) fail("touch");
   if (typeof barInPhrase !== "number" || !Number.isInteger(barInPhrase) || barInPhrase < 0 || barInPhrase >= BARS_PER_PHRASE) {
-    return null;
+    fail("barInPhrase は 0〜3 の整数");
   }
 
-  if (typeof range !== "object" || range === null) return null;
+  if (typeof range !== "object" || range === null) fail("range");
   const { low, high } = range as Record<string, unknown>;
-  if (!isMidiPitch(low) || !isMidiPitch(high) || high - low < 12) return null;
+  if (!isMidiPitch(low) || !isMidiPitch(high) || high - low < 12) fail("range.low / range.high");
 
-  if (typeof sustained !== "boolean" || typeof retargetable !== "boolean") return null;
+  if (typeof sustained !== "boolean" || typeof retargetable !== "boolean") fail("sustained / retargetable は真偽値");
 
   const memo = parseMemo((value as Record<string, unknown>).memo);
-  if (!memo) return null;
 
   return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high },
     energy,
