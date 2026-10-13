@@ -303,27 +303,30 @@ export async function generatePhraseBars(
   const heldPitch = (chord: string): number =>
     input.retargetable && currentChord ? aimPitch(input.previousPitch, currentChord, chord) : input.previousPitch;
 
-  /** このコードの上で、小節の前半に選べるリズム */
-  const firstHalfRhythms = (chord: string): Rhythm[] => [
+  /** 小節の前半に選べるリズム */
+  const firstHalfRhythms: Rhythm[] = [
     ...(mustLand ? rhythms.filter((rhythm) => rhythm.hits[0]?.at === 0) : rhythms),
-    // 鳴っている音がこのコードに合うときだけ、持ち越して伸ばす選択肢を出す。合わなければ小節の終わりで切れる
-    ...(input.sustained && fitsChord(heldPitch(chord), chord) ? TIE_RHYTHMS : []),
+    // 前の音が鳴り続けていれば、持ち越して伸ばす選択肢を出す。
+    // 実際に持ち越すかは、音に直すときにコードごとに決める（鳴っている音が合わないコードでは持ち越さない）
+    ...(input.sustained ? TIE_RHYTHMS : []),
   ];
   const pickContour = (probabilities: Record<string, number>, used: readonly string[]) =>
     contourById(sampleFromDistribution(favorLeaps(penalizeRecent(probabilities, used)), random));
 
   const startedAt = performance.now();
-  const firstQuestions: Record<string, ChoiceQuestion> = {};
-  input.chords.forEach((chord, index) => {
-    firstQuestions[`rhythm_first_${index}`] = question(
-      `Pick the rhythm the improvising soloist plays in the first half of this bar, over the chord ${chord}. Follow the bandleader's cue. A great solo breathes: it answers the previous phrase, mixes movement with space, and does not repeat the same rhythm.`,
-      firstHalfRhythms(chord),
-    );
-    firstQuestions[`contour_first_${index}`] = question(
-      `Pick how the melody moves in the first half of this bar, over the chord ${chord}. It should answer or develop the previous phrase rather than repeat it.`,
+  // フレーズ（リズムと音の動き）は、コードによらず1つだけ選ばせる。どのコードの音にするかは、音に直すときに決める。
+  // 以前は候補のコードごとに質問を重ねていたが、フレーズは度数で持っているので、コードごとに選び直す意味が薄い。
+  // 1つにすれば、小節の途中で何度コードが変わっても同じフレーズを乗せ直せて、トークンも候補の数ぶん減る
+  const firstQuestions: Record<string, ChoiceQuestion> = {
+    rhythm_first: question(
+      "Pick the rhythm the improvising soloist plays in the first half of this bar. Follow the bandleader's cue. A great solo breathes: it answers the previous phrase, mixes movement with space, and does not repeat the same rhythm.",
+      firstHalfRhythms,
+    ),
+    contour_first: question(
+      "Pick how the melody moves in the first half of this bar. It should answer or develop the previous phrase rather than repeat it.",
       CONTOURS,
-    );
-  });
+    ),
+  };
   firstQuestions.dynamics = question(
     "How loud should the soloist play this bar, given the bandleader's cue and how the solo has been going?",
     Object.entries(DYNAMICS).map(([id, description]) => ({ id, description })),
@@ -379,9 +382,9 @@ export async function generatePhraseBars(
       ) as Relation)
     : null;
 
-  const firstHalves = input.chords.map((_, index) => {
-    const rhythmOdds = first[`rhythm_first_${index}`]!.probabilities;
-    const contourOdds = first[`contour_first_${index}`]!.probabilities;
+  const firstHalf = (() => {
+    const rhythmOdds = first.rhythm_first!.probabilities;
+    const contourOdds = first.contour_first!.probabilities;
     // 「対照的に」では、前の小節で使ったものをほぼ選ばせない
     // 走っている最中の走るリズムは、対照の対象から外す（走り続けるほうを優先する）
     const contrasted = (odds: Record<string, number>) =>
@@ -424,7 +427,7 @@ export async function generatePhraseBars(
         ? motifContour
         : pickContour(relation === "contrast" ? contrasted(contourOdds) : contourOdds, used);
     return { rhythm, contour };
-  });
+  })();
   const dynamicsBias = DYNAMICS_BIAS[input.energy];
   // 直前の小節と同じ強さ・同じ動きは選ばれにくくして、小節ごとの対比を作る
   const dynamics = sampleFromDistribution(
@@ -440,61 +443,60 @@ export async function generatePhraseBars(
     random,
   ) as Shape;
 
-  const secondQuestions: Record<string, ChoiceQuestion> = {};
-  input.chords.forEach((chord, index) => {
-    secondQuestions[`rhythm_second_${index}`] = question(
-      `Pick the rhythm for the second half of this bar over the chord ${chord}, continuing from the first half so the two parts form one musical sentence. If the first half was busy, consider space; if it was sparse, consider movement.`,
-      rhythms,
-    );
-    secondQuestions[`contour_second_${index}`] = question(
-      `Pick how the melody moves in the second half of this bar over the chord ${chord}, so that it completes the idea started in the first half.`,
-      CONTOURS,
-    );
-  });
   const second = await client.decide(
     {
       ...baseState,
       volume_of_this_bar: dynamics,
-      first_half_of_this_bar_by_chord: Object.fromEntries(
-        input.chords.map((chord, index) => [chord, describe(firstHalves[index]!.rhythm, firstHalves[index]!.contour)]),
+      first_half_of_this_bar: describe(firstHalf.rhythm, firstHalf.contour),
+    },
+    {
+      rhythm_second: question(
+        "Pick the rhythm for the second half of this bar, continuing from the first half so the two parts form one musical sentence. If the first half was busy, consider space; if it was sparse, consider movement.",
+        rhythms,
+      ),
+      contour_second: question(
+        "Pick how the melody moves in the second half of this bar, so that it completes the idea started in the first half.",
+        CONTOURS,
       ),
     },
-    secondQuestions,
   );
   const latencyMs = performance.now() - startedAt;
 
-  return input.chords.map((chord, index) => {
-    const firstHalf = firstHalves[index]!;
-    const usedSoFar = [...used, firstHalf.rhythm.id, firstHalf.contour.id];
-    const secondHalf = {
-      // 形が「休む」としている場所では休む
-      rhythm:
-        slotAt(1) === false
-          ? rhythmById(REST_ID)
-          : pickRhythm(
-              second[`rhythm_second_${index}`]!.probabilities,
-              usedSoFar,
-              input.energy,
-              constraintFor(1),
-              // 前半が走っていれば、後半も走りやすくする（1小節まるごと走る）
-              firstHalf.rhythm.run ? runsBefore + 1 : 0,
-            ),
-      contour: pickContour(second[`contour_second_${index}`]!.probabilities, usedSoFar),
-    };
+  const usedSoFar = [...used, firstHalf.rhythm.id, firstHalf.contour.id];
+  const secondHalf = {
+    // 形が「休む」としている場所では休む
+    rhythm:
+      slotAt(1) === false
+        ? rhythmById(REST_ID)
+        : pickRhythm(
+            second.rhythm_second!.probabilities,
+            usedSoFar,
+            input.energy,
+            constraintFor(1),
+            // 前半が走っていれば、後半も走りやすくする（1小節まるごと走る）
+            firstHalf.rhythm.run ? runsBefore + 1 : 0,
+          ),
+    contour: pickContour(second.contour_second!.probabilities, usedSoFar),
+  };
+  const composed: [Cell, Cell] = [
+    compose(firstHalf.rhythm, firstHalf.contour),
+    compose(secondHalf.rhythm, secondHalf.contour),
+  ];
+  const cells = [firstHalf.rhythm.id, firstHalf.contour.id, secondHalf.rhythm.id, secondHalf.contour.id];
+
+  // 選ばれた1つのフレーズを、渡されたコードそれぞれの音に直す
+  return input.chords.map((chord) => {
     const targetPitch = registerTarget(arcId, barInPhrase, input.range);
-    const composed: [Cell, Cell] = [
-      compose(firstHalf.rhythm, firstHalf.contour),
-      compose(secondHalf.rhythm, secondHalf.contour),
-    ];
     const render = {
       previousPitch: heldPitch(chord),
       ...input.range,
       dynamics,
       shape,
       ...(targetPitch === undefined ? {} : { targetPitch }),
+      // 鳴っている音がこのコードに合わなければ、持ち越さない（小節の頭で切れる）
+      allowTie: input.sustained === true && fitsChord(heldPitch(chord), chord),
     };
     const notes = renderCells(composed, chord, render);
-    const cells = [firstHalf.rhythm.id, firstHalf.contour.id, secondHalf.rhythm.id, secondHalf.contour.id];
     return {
       chord,
       notes,

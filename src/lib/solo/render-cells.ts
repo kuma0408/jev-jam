@@ -19,6 +19,11 @@ export type RenderOptions = {
   shape: Shape;
   /** この小節で目指す音の高さ。指定すると、直前の音よりそちらへ寄った高さからフレーズを始める */
   targetPitch?: number;
+  /**
+   * false なら、持ち越しの音を鳴らさない（その音だけを落とし、続きの音は鳴らす）。
+   * 鳴っている音がこのコードに合わないときに使う。省略時は true
+   */
+  allowTie?: boolean;
 };
 
 const BEATS_PER_CELL = 2;
@@ -136,6 +141,7 @@ export function renderCells(cells: readonly [Cell, Cell], chord: string, options
       options.targetPitch !== undefined && half === 0 ? "center" : "first",
     );
     for (const note of cell.notes) {
+      if (note.tie && options.allowTie === false) continue;
       const startBeats = half * BEATS_PER_CELL + note.at;
       // 持ち越しの音は、直前の音の高さのまま伸ばす
       const pitch = note.tie ? options.previousPitch : pitchOf(note, rootPitch, scale);
