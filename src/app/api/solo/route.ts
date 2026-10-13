@@ -3,7 +3,7 @@ import { NOTE_NAMES } from "../../../lib/music/chord.ts";
 import { KNOWN_CHORDS } from "../../../lib/progression/candidates.ts";
 import { SOLO_STRATEGIES, type SoloBar, type SoloMemo, type SoloRequest, type SoloResponse } from "../../../lib/solo/api.ts";
 import { SLOTS_PER_BAR, generateBar } from "../../../lib/solo/generate.ts";
-import { generateCellBar } from "../../../lib/solo/generate-cells.ts";
+import { generateCellBars } from "../../../lib/solo/generate-cells.ts";
 import { legacyToSoloBar } from "../../../lib/solo/legacy-bar.ts";
 import type { SlotChoice } from "../../../lib/solo/phrase.ts";
 import { HOLD, REST } from "../../../lib/solo/questions.ts";
@@ -22,8 +22,8 @@ export async function POST(request: Request): Promise<Response> {
   const apiKey = process.env.TYPESAFE_API_KEY;
   const client = apiKey ? createJevClient(apiKey) : createMockClient();
 
-  // 候補すべての分を並列に依頼する（ユーザーが選ぶ前に用意しておくため）
-  const settled = await Promise.allSettled(body.chords.map((chord) => generate(client, chord, body)));
+  // 候補すべての分を先に作る（ユーザーが選ぶ前に用意しておくため）
+  const settled = await generateAll(client, body);
 
   const results: SoloResponse["results"] = {};
   settled.forEach((outcome, index) => {
@@ -39,23 +39,35 @@ export async function POST(request: Request): Promise<Response> {
   return Response.json({ client: client.name, results } satisfies SoloResponse);
 }
 
-async function generate(client: DecisionClient, chord: string, body: SoloRequest): Promise<SoloBar> {
+async function generateAll(client: DecisionClient, body: SoloRequest): Promise<PromiseSettledResult<SoloBar>[]> {
   if (body.strategy === "cells") {
-    return generateCellBar(client, {
-      chord,
-      bpm: body.bpm,
-      previousPitch: body.previousPitch,
-      range: body.range,
-      memo: body.memo,
-    });
+    // 型の方式は、全コードの質問を1組のJev呼び出しにまとめる。失敗するときは全コードまとめて失敗する
+    try {
+      const bars = await generateCellBars(client, {
+        chords: body.chords,
+        bpm: body.bpm,
+        previousPitch: body.previousPitch,
+        range: body.range,
+        memo: body.memo,
+      });
+      return bars.map((value) => ({ status: "fulfilled", value }));
+    } catch (reason) {
+      return body.chords.map(() => ({ status: "rejected", reason }));
+    }
   }
-  const result = await generateBar(client, {
-    strategy: body.strategy,
-    chord,
-    bpm: body.bpm,
-    previousBar: body.memo.choices ?? [],
-  });
-  return legacyToSoloBar(result, { previousPitch: body.previousPitch, ...body.range });
+
+  // 1音ずつの方式は、コードごとに別のリクエストを並列に投げる
+  return Promise.allSettled(
+    body.chords.map(async (chord) => {
+      const result = await generateBar(client, {
+        strategy: body.strategy as Exclude<SoloRequest["strategy"], "cells">,
+        chord,
+        bpm: body.bpm,
+        previousBar: body.memo.choices ?? [],
+      });
+      return legacyToSoloBar(result, { previousPitch: body.previousPitch, ...body.range });
+    }),
+  );
 }
 
 function isMidiPitch(value: unknown): value is number {

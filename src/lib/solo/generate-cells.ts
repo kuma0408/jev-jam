@@ -5,8 +5,9 @@ import { CELLS, type Cell, cellById, cellsForTempo } from "./cells.ts";
 import type { ChoiceQuestion } from "./questions.ts";
 import { type Dynamics, type Shape, renderCells } from "./render-cells.ts";
 
-export type CellBarInput = {
-  chord: string;
+export type CellBarsInput = {
+  /** ソロを用意したいコード。次に選べる候補すべてを一度に渡す */
+  chords: readonly string[];
   bpm: number;
   previousPitch: number;
   range: { low: number; high: number };
@@ -62,12 +63,15 @@ function choiceQuestion(instructions: string, criteria: Record<string, string>):
 /**
  * Jevに1小節ぶんのソロを、半小節の型2つと強弱として選ばせる（ADR 0008）。
  * 前半を決めてから後半を聞くので、2つの型がつながった1つのフレーズになりやすい。
+ *
+ * 次に選べるコードすべての分を、コードごとの質問として1回のリクエストに詰める。
+ * Jevは1リクエスト内の質問を並列に評価するので、候補が増えても呼び出しは2回、所要時間もほぼ変わらない。
  */
-export async function generateCellBar(
+export async function generateCellBars(
   client: DecisionClient,
-  input: CellBarInput,
+  input: CellBarsInput,
   random: () => number = Math.random,
-): Promise<SoloBar> {
+): Promise<SoloBar[]> {
   const cells = cellsForTempo(input.bpm);
   const recent = input.memo.cells ?? [];
   // 送り返されたIDのうち、一覧にあるものだけを使う
@@ -76,53 +80,73 @@ export async function generateCellBar(
   const baseState = {
     style: "jazz / neo soul jam session, improvised horn solo",
     tempo: `${input.bpm} BPM, ${tempoFeel(input.bpm)}`,
-    current_chord: input.chord,
     previous_bar_phrase: previousPhrase.length > 0 ? previousPhrase : "nothing yet, the solo is just starting",
     ...(input.memo.dynamics ? { previous_bar_volume: input.memo.dynamics } : {}),
   };
 
   const startedAt = performance.now();
-  const first = await client.decide(baseState, {
-    first_half: cellQuestion(
-      "Pick what the improvising soloist plays in the first half of this bar. A great solo breathes: it answers the previous phrase, mixes busy lines with space, and does not repeat the same idea.",
+  const firstQuestions: Record<string, ChoiceQuestion> = {};
+  input.chords.forEach((chord, index) => {
+    firstQuestions[`first_half_${index}`] = cellQuestion(
+      `Pick what the improvising soloist plays in the first half of this bar, over the chord ${chord}. A great solo breathes: it answers the previous phrase, mixes busy lines with space, and does not repeat the same idea.`,
       cells,
-    ),
-    dynamics: choiceQuestion("How loud should the soloist play this bar, given how the solo has been going?", DYNAMICS),
-    shape: choiceQuestion("How should the intensity move within this bar?", SHAPES),
+    );
   });
-  const firstCell = cellById(sampleFromDistribution(penalizeRecent(first.first_half!.probabilities, recent), random));
+  firstQuestions.dynamics = choiceQuestion(
+    "How loud should the soloist play this bar, given how the solo has been going?",
+    DYNAMICS,
+  );
+  firstQuestions.shape = choiceQuestion("How should the intensity move within this bar?", SHAPES);
+
+  const first = await client.decide(baseState, firstQuestions);
+  const firstCells = input.chords.map((_, index) =>
+    cellById(sampleFromDistribution(penalizeRecent(first[`first_half_${index}`]!.probabilities, recent), random)),
+  );
   const dynamics = sampleFromDistribution(first.dynamics!.probabilities, random) as Dynamics;
   const shape = sampleFromDistribution(first.shape!.probabilities, random) as Shape;
 
+  const secondQuestions: Record<string, ChoiceQuestion> = {};
+  input.chords.forEach((chord, index) => {
+    secondQuestions[`second_half_${index}`] = cellQuestion(
+      `Pick what the soloist plays in the second half of this bar over the chord ${chord}, continuing from the first half so the two parts form one musical sentence. If the first half was busy, consider space; if it was sparse, consider movement.`,
+      cells,
+    );
+  });
   const second = await client.decide(
-    { ...baseState, volume_of_this_bar: dynamics, first_half_of_this_bar: firstCell.description },
     {
-      second_half: cellQuestion(
-        "Pick what the soloist plays in the second half of this bar, continuing from the first half so the two parts form one musical sentence. If the first half was busy, consider space; if it was sparse, consider movement.",
-        cells,
+      ...baseState,
+      volume_of_this_bar: dynamics,
+      first_half_of_this_bar_by_chord: Object.fromEntries(
+        input.chords.map((chord, index) => [chord, firstCells[index]!.description]),
       ),
     },
-  );
-  const secondCell = cellById(
-    sampleFromDistribution(penalizeRecent(second.second_half!.probabilities, [...recent, firstCell.id]), random),
+    secondQuestions,
   );
   const latencyMs = performance.now() - startedAt;
 
-  const notes = renderCells([firstCell, secondCell], input.chord, {
-    previousPitch: input.previousPitch,
-    ...input.range,
-    dynamics,
-    shape,
+  return input.chords.map((chord, index) => {
+    const firstCell = firstCells[index]!;
+    const secondCell = cellById(
+      sampleFromDistribution(
+        penalizeRecent(second[`second_half_${index}`]!.probabilities, [...recent, firstCell.id]),
+        random,
+      ),
+    );
+    const notes = renderCells([firstCell, secondCell], chord, {
+      previousPitch: input.previousPitch,
+      ...input.range,
+      dynamics,
+      shape,
+    });
+    return {
+      chord,
+      notes,
+      summary: `${firstCell.id} + ${secondCell.id}`,
+      details: `強弱 ${dynamics} / ${shape}`,
+      latencyMs,
+      calls: 2,
+      lastPitch: notes.at(-1)?.pitch ?? input.previousPitch,
+      memo: { cells: [firstCell.id, secondCell.id], dynamics },
+    };
   });
-
-  return {
-    chord: input.chord,
-    notes,
-    summary: `${firstCell.id} + ${secondCell.id}`,
-    details: `強弱 ${dynamics} / ${shape}`,
-    latencyMs,
-    calls: 2,
-    lastPitch: notes.at(-1)?.pitch ?? input.previousPitch,
-    memo: { cells: [firstCell.id, secondCell.id], dynamics },
-  };
 }
