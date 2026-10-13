@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseChord } from "../music/chord.ts";
-import { KNOWN_CHORDS, MAX_CANDIDATES, nextChordCandidates } from "./candidates.ts";
+import { KNOWN_CHORDS, MAX_CANDIDATES, MIN_CANDIDATES, nextChordCandidates } from "./candidates.ts";
 
 const chordsOf = (history: string[]) => nextChordCandidates(history).map((candidate) => candidate.chord);
 
@@ -50,12 +50,51 @@ describe("nextChordCandidates", () => {
     expect(() => nextChordCandidates(["Xyz"])).toThrow();
   });
 
+  it("続きが1通りしか無かったコードにも、別の道がある", () => {
+    // ドミナントの連鎖
+    expect(chordsOf(["E7"])).toContain("A7");
+    expect(chordsOf(["A7"])).toContain("D7");
+    // 裏コードを挟んでIVへ
+    expect(chordsOf(["Gm7"])).toContain("Gb7");
+  });
+
+  it("同じコードにもう1小節とどまることを、いつでも選べる", () => {
+    for (const chord of KNOWN_CHORDS) {
+      const stay = nextChordCandidates([chord]).find((candidate) => candidate.chord === chord);
+      expect(stay).toMatchObject({ adventure: 1 });
+      expect(stay!.reason).toContain("とどまる");
+    }
+  });
+
+  it("とどまる候補は、既定（先頭）にはしない", () => {
+    for (const chord of KNOWN_CHORDS) {
+      expect(nextChordCandidates([chord])[0]!.chord).not.toBe(chord);
+    }
+  });
+
+  it("定番の続きが足りないときは、トニックへ帰る道などで補う", () => {
+    // Db7 の定番の続きは Cmaj7 だけ
+    const candidates = nextChordCandidates(["Dm7", "Db7"]);
+    expect(candidates[0]!.chord).toBe("Cmaj7");
+    expect(candidates.length).toBeGreaterThanOrEqual(MIN_CANDIDATES);
+  });
+
+  it("とどまった後も、とどまる前の流れの続きを候補にする", () => {
+    expect(chordsOf(["Dm7", "G7", "G7"])[0]).toBe("Cmaj7");
+  });
+
   describe.each(KNOWN_CHORDS)("%s から", (chord) => {
     const candidates = nextChordCandidates([chord]);
 
-    it("候補が1つ以上、上限以下ある", () => {
-      expect(candidates.length).toBeGreaterThan(0);
+    it("候補が3つ以上、上限以下ある", () => {
+      expect(MIN_CANDIDATES).toBe(3);
+      expect(candidates.length).toBeGreaterThanOrEqual(MIN_CANDIDATES);
       expect(candidates.length).toBeLessThanOrEqual(MAX_CANDIDATES);
+    });
+
+    it("同じコードを重複して返さない", () => {
+      const chords = candidates.map((candidate) => candidate.chord);
+      expect(new Set(chords).size).toBe(chords.length);
     });
 
     it("どの候補に進んでも、その先の候補がある（セッションが行き止まらない）", () => {
