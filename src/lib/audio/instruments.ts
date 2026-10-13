@@ -56,7 +56,7 @@ export const COMP_SAMPLES = ELECTRIC_PIANO_SAMPLES;
 export const COMP_GAIN_DB = 4;
 export const BASS_GAIN_DB = 8;
 
-export const BASS_SAMPLES = sampleMap("bass", ["Eb1", "Gb1", "A1", "C2", "Eb2", "Gb2"]);
+export const BASS_SAMPLES = sampleMap("bass", ["Eb1", "Gb1", "A1", "C2", "Eb2", "Gb2", "A2", "C3"]);
 
 /** ベースのルート音を、ウッドベースの低い音域（E1〜Eb2）に収める */
 export function bassPitch(rootPitchClass: number): number {

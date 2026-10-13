@@ -10,9 +10,8 @@ import {
   SOLO_INSTRUMENTS,
   SOLO_VOICES,
   type SoloVoice,
-  bassPitch,
 } from "../../lib/audio/instruments.ts";
-import { chordTones, parseChord, pitchClassOf } from "../../lib/music/chord.ts";
+import { accompaniment } from "../../lib/band/accompaniment.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
@@ -91,7 +90,9 @@ type Engine = {
   reverb: import("tone").Reverb;
   comp: import("tone").Sampler;
   bass: import("tone").Sampler;
-  hat: import("tone").NoiseSynth;
+  /** シンバル。ノイズの高い成分だけを通して鳴らす */
+  ride: import("tone").NoiseSynth;
+  rideFilter: import("tone").Filter;
   bar: number;
   /** これまでに鳴らしたコード（古い順） */
   history: string[];
@@ -187,33 +188,43 @@ export function useSession(): Session {
       const bar = engine.bar + 1;
       const draw = tone.getDraw();
 
-      // 伴奏: ベースがルート、その上に構成音
-      const root = parseChord(current).root;
+      engine.bar = bar;
+      engine.history.push(current);
+      engine.selected = null;
+      const next = nextChordCandidates(engine.history);
+
       const beat = tone.Time("4n").toSeconds();
-      engine.bass.triggerAttackRelease(tone.Frequency(bassPitch(root), "midi").toFrequency(), beat * 3.5, time, 0.8);
-      engine.comp.triggerAttackRelease(
-        chordTones(current).map((note) => tone.Frequency(48 + pitchClassOf(note), "midi").toFrequency()),
-        beat * 3.8,
-        time,
-        0.45,
-      );
+      const ratio = swingRatioFor(settingsRef.current.bpm);
+      const at = (beats: number) => time + swingBeats(beats, ratio) * beat;
+      const midi = (pitch: number) => tone.Frequency(pitch, "midi").toFrequency();
+
+      // 伴奏。ベースは、選ばれなければ進む先（既定の候補）のルートへ寄っていく
+      for (const event of accompaniment(current, { bar, nextChord: next[0]?.chord })) {
+        const start = at(event.startBeats);
+        const duration = Math.max(0.04, at(event.startBeats + event.durationBeats) - start);
+        if (event.part === "bass") {
+          engine.bass.triggerAttackRelease(midi(event.pitches[0]!), duration, start, event.velocity);
+        } else if (event.part === "comp") {
+          engine.comp.triggerAttackRelease(event.pitches.map(midi), duration, start, event.velocity);
+        } else {
+          engine.ride.triggerAttackRelease(0.05, start, event.velocity);
+        }
+      }
       for (let i = 0; i < 4; i++) {
-        engine.hat.triggerAttackRelease("32n", time + i * beat, i === 0 ? 0.25 : 0.12);
         draw.schedule(() => emit({ kind: "beat", beat: i }), time + i * beat);
       }
 
       // ソロ
       if (solo) {
-        const { voice, bpm } = settingsRef.current;
-        const ratio = swingRatioFor(bpm);
-        const place = (beats: number, swing: boolean) => (swing ? swingBeats(beats, ratio) : beats);
+        const { voice } = settingsRef.current;
+        const place = (beats: number, swing: boolean) => (swing ? at(beats) : time + beats * beat);
         for (const note of solo.notes) {
-          const start = time + place(note.startBeats, note.swing) * beat;
-          const end = time + place(note.startBeats + note.durationBeats, note.swing) * beat;
+          const start = place(note.startBeats, note.swing);
+          const end = place(note.startBeats + note.durationBeats, note.swing);
           const durationSeconds = Math.max(0.04, (end - start) * 0.92);
           engine.soloFilter.frequency.setTargetAtTime(brightnessHz(note.velocity), start, 0.01);
           engine.solos[voice].triggerAttackRelease(
-            tone.Frequency(note.pitch, "midi").toFrequency(),
+            midi(note.pitch),
             durationSeconds,
             start,
             note.velocity,
@@ -224,10 +235,6 @@ export function useSession(): Session {
         previous.memo = solo.memo;
       }
 
-      engine.bar = bar;
-      engine.history.push(current);
-      engine.selected = null;
-      const next = nextChordCandidates(engine.history);
       void prepare(
         engine,
         next.map((candidate) => candidate.chord),
@@ -272,7 +279,8 @@ export function useSession(): Session {
       engine.reverb,
       engine.comp,
       engine.bass,
-      engine.hat,
+      engine.ride,
+      engine.rideFilter,
     ]) {
       node.dispose();
     }
@@ -312,14 +320,16 @@ export function useSession(): Session {
         reverb,
         comp: new tone.Sampler({ urls: COMP_SAMPLES, release: 0.6 }).connect(reverb),
         bass: new tone.Sampler({ urls: BASS_SAMPLES, release: 0.3 }).toDestination(),
-        hat: new tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.04, sustain: 0 } }).toDestination(),
+        ride: new tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.09, sustain: 0 } }),
+        rideFilter: new tone.Filter({ type: "highpass", frequency: 7000 }).connect(reverb),
         bar: 0,
         history: [],
         prepared: new Map(),
         selected: null,
         requestToken: 0,
       };
-      engine.hat.volume.value = -18;
+      engine.ride.connect(engine.rideFilter);
+      engine.ride.volume.value = -10;
       engine.comp.volume.value = COMP_GAIN_DB;
       engine.bass.volume.value = BASS_GAIN_DB;
       engineRef.current = engine;
