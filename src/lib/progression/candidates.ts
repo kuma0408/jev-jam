@@ -1,3 +1,5 @@
+import { PROGRESSIONS, type Progression } from "./library.ts";
+
 export type ChordCandidate = {
   chord: string;
   /** 1=定番、2=ひねり、3=大胆 */
@@ -6,93 +8,87 @@ export type ChordCandidate = {
   reason: string;
 };
 
-type Transition = [chord: string, adventure: ChordCandidate["adventure"], reason: string];
+export const MAX_CANDIDATES = 6;
+/** 一致の長さはここで頭打ちにする。長い進行に一度乗ると、そこから抜けられなくなるのを防ぐ */
+const MAX_MATCH_LENGTH = 4;
+const JAZZ_WEIGHT = 2;
+const POP_WEIGHT = 1;
 
-// Cメジャーを中心にした重み付き遷移グラフ（ADR 0003）。
-// 各コードの候補は冒険度の低い順に並べ、先頭を「選ばなかったときの既定」とする。
-// 鍵盤の1つの鍵に1つのコードを割り当てるので、同じ候補リスト内でルート音は重複させない。
-const TRANSITIONS: Record<string, Transition[]> = {
-  Cmaj7: [
-    ["Dm7", 1, "IIへ。ツーファイブの入口"],
-    ["Am7", 1, "VIへ。平行調の落ち着き"],
-    ["Fmaj7", 1, "IVへ。明るく開く"],
-    ["E7", 2, "VIに向かうセカンダリードミナント"],
-    ["Abmaj7", 3, "同主短調からの借用（bVI）"],
-  ],
-  Dm7: [
-    ["G7", 1, "Vへ。王道のツーファイブ"],
-    ["Db7", 2, "裏コード。半音で滑り降りる"],
-    ["Em7", 2, "IIIへ順次上行"],
-    ["Fm7", 3, "同主短調からの借用（IVm）"],
-  ],
-  Em7: [
-    ["A7", 1, "IIに向かうセカンダリードミナント"],
-    ["Fmaj7", 1, "IVへ半音上行"],
-    ["Dm7", 2, "IIへ順次下行"],
-  ],
-  Fmaj7: [
-    ["G7", 1, "Vへ。解決に向かう"],
-    ["Em7", 1, "IIIへ半音下行"],
-    ["Dm7", 1, "IIへ。同じサブドミナントの色"],
-    ["Fm7", 2, "サブドミナントマイナー。切なく陰る"],
-    ["Bb7", 3, "バックドアのドミナント（bVII7）"],
-  ],
-  G7: [
-    ["Cmaj7", 1, "Iへ解決"],
-    ["Am7", 2, "偽終止。VIへ逃げる"],
-    ["Em7", 2, "IIIへ。解決をぼかす"],
-    ["Abmaj7", 3, "bVIへ。意外な着地"],
-  ],
-  Am7: [
-    ["Dm7", 1, "IIへ。4度進行"],
-    ["Fmaj7", 1, "IVへ。3度下行"],
-    ["G7", 2, "Vへ直行"],
-    ["Abmaj7", 3, "半音下の借用和音へ"],
-  ],
-  A7: [
-    ["Dm7", 1, "IIへ解決"],
-    ["Fmaj7", 2, "IVへ逃げる偽終止"],
-  ],
-  E7: [
-    ["Am7", 1, "VIへ解決"],
-    ["Fmaj7", 2, "IVへ逃げる偽終止"],
-  ],
-  Db7: [
-    ["Cmaj7", 1, "Iへ半音で解決"],
-    ["Am7", 2, "VIへ。解決をぼかす"],
-  ],
-  Fm7: [
-    ["Bb7", 1, "バックドアのツーファイブ"],
-    ["Cmaj7", 1, "Iへ。サブドミナントマイナー終止"],
-    ["G7", 2, "Vへ"],
-    ["Em7", 2, "IIIへ半音下行"],
-  ],
-  Bb7: [
-    ["Cmaj7", 1, "バックドアからIへ解決"],
-    ["Ebmaj7", 1, "bIIIへ。4度進行"],
-    ["Am7", 2, "VIへ半音下行"],
-  ],
-  Ebmaj7: [
-    ["Abmaj7", 1, "bVIへ。4度進行"],
-    ["Dm7", 2, "IIへ半音下行して戻る"],
-    ["Fm7", 2, "IVmへ"],
-  ],
-  Abmaj7: [
-    ["G7", 1, "Vへ半音下行"],
-    ["Bb7", 1, "bVI→bVII→I の上行"],
-    ["Db7", 2, "裏コードへ。4度進行"],
-    ["Fm7", 2, "IVmへ"],
-    ["Cmaj7", 2, "Iへ直接戻る"],
-  ],
-};
+/** 進行の一覧に出てくるすべてのコード */
+export const KNOWN_CHORDS: readonly string[] = [...new Set(PROGRESSIONS.flatMap((progression) => progression.chords))];
 
-export const KNOWN_CHORDS: readonly string[] = Object.keys(TRANSITIONS);
+// キー（Cメジャー）の中での遠さで冒険度を決める
+const DIATONIC = new Set(["Cmaj7", "Dm7", "Em7", "Fmaj7", "G7", "Am7"]);
+/** キーの中のコードへ向かう、セカンダリードミナントとその相方 */
+const SECONDARY = new Set(["A7", "E7", "C7", "Gm7"]);
 
-export function nextChordCandidates(history: readonly string[]): ChordCandidate[] {
-  const current = history.at(-1) ?? "";
-  const transitions = TRANSITIONS[current];
-  if (!transitions) {
-    throw new Error(`進行のルールに無いコードです: ${current}`);
+function adventureOf(chord: string): ChordCandidate["adventure"] {
+  return DIATONIC.has(chord) ? 1 : SECONDARY.has(chord) ? 2 : 3;
+}
+
+/** 進行の中の位置を、繰り返す進行なら端をまたいで読む。範囲外なら undefined */
+function chordAt(progression: Progression, index: number): string | undefined {
+  const { chords, loop } = progression;
+  if (loop) {
+    return chords[((index % chords.length) + chords.length) % chords.length];
   }
-  return transitions.map(([chord, adventure, reason]) => ({ chord, adventure, reason }));
+  return chords[index];
+}
+
+/** 進行の position 番目が履歴の最後だとして、履歴の末尾と何コードぶん一致するかを数える */
+function matchLength(progression: Progression, position: number, history: readonly string[]): number {
+  const limit = Math.min(history.length, progression.chords.length, MAX_MATCH_LENGTH);
+  let length = 0;
+  while (length < limit && chordAt(progression, position - length) === history[history.length - 1 - length]) {
+    length++;
+  }
+  return length;
+}
+
+/** length: 最も長い一致 / weight: 支持する進行の重みの合計 / name: 最も長く一致した進行の名前 */
+type Support = { length: number; weight: number; name: string };
+
+/**
+ * これまでの進行から、次に進めるコードの候補を返す。
+ *
+ * よく使われる進行の一覧の中から、履歴の末尾と一致する箇所を探し、その「続き」を候補にする。
+ * 長く一致する進行の続きほど上位に置くので、同じコードからでも、そこまでの流れで順位が変わる。
+ * 先頭の候補が「選ばなかったときの既定」になる。
+ */
+export function nextChordCandidates(history: readonly string[]): ChordCandidate[] {
+  const current = history.at(-1);
+  if (current === undefined || !KNOWN_CHORDS.includes(current)) {
+    throw new Error(`進行の一覧に無いコードです: ${current ?? "（履歴が空）"}`);
+  }
+
+  const supports = new Map<string, Support>();
+  for (const progression of PROGRESSIONS) {
+    progression.chords.forEach((chord, position) => {
+      if (chord !== current) return;
+      const next = chordAt(progression, position + 1);
+      if (next === undefined) return;
+
+      const length = matchLength(progression, position, history);
+      const weight = progression.pop ? POP_WEIGHT : JAZZ_WEIGHT;
+      const support = supports.get(next);
+      if (!support) {
+        supports.set(next, { length, weight, name: progression.name });
+      } else {
+        support.weight += weight;
+        if (length > support.length) {
+          support.length = length;
+          support.name = progression.name;
+        }
+      }
+    });
+  }
+
+  return [...supports.entries()]
+    .map(([chord, support]) => ({ chord, support, adventure: adventureOf(chord) }))
+    .sort(
+      (a, b) =>
+        b.support.length - a.support.length || b.support.weight - a.support.weight || a.adventure - b.adventure,
+    )
+    .slice(0, MAX_CANDIDATES)
+    .map(({ chord, support, adventure }) => ({ chord, adventure, reason: `「${support.name}」の続き` }));
 }
