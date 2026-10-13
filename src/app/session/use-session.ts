@@ -14,6 +14,7 @@ import {
 import { accompaniment } from "../../lib/band/accompaniment.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
+import type { Energy } from "../../lib/solo/energy.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
 
 const START_CHORD = "Cmaj7";
@@ -32,6 +33,8 @@ export type SessionSettings = {
   voice: SoloVoice;
   /** ソロの音量（dB） */
   soloDb: number;
+  /** 盛り上がり。ソロの音数と強さ、伴奏の刻みに効く */
+  energy: Energy;
 };
 
 /** 音が実際に鳴るタイミングで届く通知。背景の演出などに使う */
@@ -133,6 +136,7 @@ export function useSession(): Session {
     strategy: "cells",
     voice: "sax-recorded",
     soloDb: 0,
+    energy: 2,
   });
   const [chord, setChord] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ChordCandidate[]>([]);
@@ -165,8 +169,8 @@ export function useSession(): Session {
     const requestedAt = performance.now();
     engine.prepared = new Map();
     setReadyMs(null);
-    const { bpm, strategy, voice } = settingsRef.current;
-    return requestSolos({ chords, strategy, bpm, previousPitch, range: SOLO_INSTRUMENTS[voice].range, memo })
+    const { bpm, strategy, voice, energy } = settingsRef.current;
+    return requestSolos({ chords, strategy, bpm, previousPitch, range: SOLO_INSTRUMENTS[voice].range, energy, memo })
       .then((response) => {
         if (engineRef.current !== engine || engine.requestToken !== token) return;
         engine.prepared = new Map(Object.entries(response.results));

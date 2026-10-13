@@ -1,9 +1,10 @@
 // 画面と中継API（/api/solo）の間でやり取りする型
+import type { Energy } from "./energy.ts";
 import type { SlotChoice } from "./phrase.ts";
 
 /**
  * Jevへの聞き方。
- * cells: 半小節の型から選ばせる / batch: 8音を1回で聞く / two-stage: 方針を決めてから8音を聞く
+ * cells: 半小節ごとにリズムと音の動きを選ばせる / batch: 8音を1回で聞く / two-stage: 方針を決めてから8音を聞く
  */
 export type SoloStrategy = "cells" | "batch" | "two-stage";
 
@@ -24,9 +25,9 @@ export type SoloNote = {
 
 /** 次の小節を依頼するときに送り返す、直前の小節の記録 */
 export type SoloMemo = {
-  /** 型の方式: 使った型のID */
+  /** cells の方式: [前半のリズム, 前半の動き, 後半のリズム, 後半の動き] のID */
   cells?: string[];
-  /** 型の方式: 強弱 */
+  /** cells の方式: 強弱 */
   dynamics?: string;
   /** 1音ずつの方式: スロットごとの選択 */
   choices?: SlotChoice[];
@@ -57,6 +58,8 @@ export type SoloRequest = {
   previousPitch: number;
   /** ソロの楽器の音域（MIDIノート番号） */
   range: { low: number; high: number };
+  /** ユーザーがつまみで決めた盛り上がり */
+  energy: Energy;
   memo: SoloMemo;
 };
 

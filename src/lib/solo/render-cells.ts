@@ -58,7 +58,7 @@ function chooseRootPitch(cell: Cell, rootPitchClass: number, scale: readonly num
   const highest = Math.max(...offsets);
   const lowest = Math.min(...offsets);
   while (rootPitch + highest > high) rootPitch -= 12;
-  // 音域より型の幅が広いときは、下にはみ出すより上にはみ出すほうを選ぶ
+  // 音域よりフレーズの幅が広いときは、下にはみ出すより上にはみ出すほうを選ぶ
   while (rootPitch + lowest < low) rootPitch += 12;
   return rootPitch;
 }
@@ -97,6 +97,12 @@ export function renderCells(cells: readonly [Cell, Cell], chord: string, options
       });
       reference = pitch;
     }
+  });
+
+  // 単旋律の楽器なので、次の音が始まったら前の音を切る。最後の音は小節の終わりで切る
+  notes.forEach((note, index) => {
+    const limit = notes[index + 1]?.startBeats ?? BEATS_PER_BAR;
+    note.durationBeats = Math.min(note.durationBeats, limit - note.startBeats);
   });
   return notes;
 }

@@ -3,7 +3,8 @@ import { NOTE_NAMES } from "../../../lib/music/chord.ts";
 import { KNOWN_CHORDS } from "../../../lib/progression/candidates.ts";
 import { SOLO_STRATEGIES, type SoloBar, type SoloMemo, type SoloRequest, type SoloResponse } from "../../../lib/solo/api.ts";
 import { SLOTS_PER_BAR, generateBar } from "../../../lib/solo/generate.ts";
-import { generateCellBars } from "../../../lib/solo/generate-cells.ts";
+import { isEnergy } from "../../../lib/solo/energy.ts";
+import { generatePhraseBars } from "../../../lib/solo/generate-phrases.ts";
 import { legacyToSoloBar } from "../../../lib/solo/legacy-bar.ts";
 import type { SlotChoice } from "../../../lib/solo/phrase.ts";
 import { HOLD, REST } from "../../../lib/solo/questions.ts";
@@ -41,14 +42,15 @@ export async function POST(request: Request): Promise<Response> {
 
 async function generateAll(client: DecisionClient, body: SoloRequest): Promise<PromiseSettledResult<SoloBar>[]> {
   if (body.strategy === "cells") {
-    // 型の方式は、全コードの質問を1組のJev呼び出しにまとめる。失敗するときは全コードまとめて失敗する
+    // 全コードの質問を1組のJev呼び出しにまとめる。失敗するときは全コードまとめて失敗する
     try {
-      const bars = await generateCellBars(client, {
+      const bars = await generatePhraseBars(client, {
         chords: body.chords,
         bpm: body.bpm,
         previousPitch: body.previousPitch,
         range: body.range,
         memo: body.memo,
+        energy: body.energy,
       });
       return bars.map((value) => ({ status: "fulfilled", value }));
     } catch (reason) {
@@ -98,7 +100,7 @@ function parseMemo(value: unknown): SoloMemo | null {
 
 function parseRequest(value: unknown): SoloRequest | null {
   if (typeof value !== "object" || value === null) return null;
-  const { chords, strategy, bpm, previousPitch, range } = value as Record<string, unknown>;
+  const { chords, strategy, bpm, previousPitch, range, energy } = value as Record<string, unknown>;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) return null;
   if (!chords.every((chord) => typeof chord === "string" && KNOWN_CHORDS.includes(chord))) return null;
@@ -106,6 +108,7 @@ function parseRequest(value: unknown): SoloRequest | null {
   if (!strategyValue) return null;
   if (typeof bpm !== "number" || !(bpm >= 40 && bpm <= 240)) return null;
   if (!isMidiPitch(previousPitch)) return null;
+  if (!isEnergy(energy)) return null;
 
   if (typeof range !== "object" || range === null) return null;
   const { low, high } = range as Record<string, unknown>;
@@ -114,5 +117,5 @@ function parseRequest(value: unknown): SoloRequest | null {
   const memo = parseMemo((value as Record<string, unknown>).memo);
   if (!memo) return null;
 
-  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, memo };
+  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, memo };
 }
