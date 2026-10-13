@@ -38,6 +38,11 @@ export function noteAbove(root: number, semitones: number): NoteName {
   return NOTE_NAMES[(root + semitones) % 12]!;
 }
 
+/** 音名のピッチクラス（C=0）を返す */
+export function pitchClassOf(note: NoteName): number {
+  return NOTE_NAMES.indexOf(note);
+}
+
 export function chordTones(symbol: string): NoteName[] {
   const { root, quality } = parseChord(symbol);
   return CHORD_INTERVALS[quality].map((interval) => noteAbove(root, interval));
