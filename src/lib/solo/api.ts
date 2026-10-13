@@ -92,6 +92,11 @@ export type SoloRequest = {
   sustained: boolean;
   /** 直前の小節の最後の音が、コード選択の締切より後に鳴り始める音か。そうなら次のコードに合う音へ寄せて鳴らす */
   retargetable: boolean;
+  /**
+   * true なら、Jevを呼ばずにダミーの応答で作る。動作確認でトークンを使わないためのもの。
+   * 本番（NODE_ENV=production）では無視する
+   */
+  mock?: boolean;
   memo: SoloMemo;
 };
 

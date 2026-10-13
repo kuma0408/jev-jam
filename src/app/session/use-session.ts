@@ -318,6 +318,8 @@ export function useSession(): Session {
         barInPhrase: engine.bar % 4,
         sustained,
         retargetable,
+        // アドレスに ?mock=1 を付けて開くと、Jevを呼ばずにダミーで動かす（動作確認用）
+        mock: new URLSearchParams(window.location.search).has("mock"),
         memo,
       })
         .then((response) => {

@@ -30,3 +30,4 @@
 | [0024](0024-phrase-shape-register-arc-and-contrast.md) | 4小節ごとに「吹く場所」と「高さの流れ」を決め、跳躍と強弱の幅を広げる | 検証結果 | Accepted | 2026-10-13 |
 | [0025](0025-sixteenth-runs-less-silence-richer-comping.md) | 16分音符は走らせ、伸ばしと無音を減らし、伴奏の押さえ方を増やす | 検証結果 | Accepted | 2026-10-13 |
 | [0026](0026-play-the-chord-and-piano-roll.md) | コードは「選ぶ」のではなく「弾く」。弾いた瞬間に鳴り、バンドが次の拍から付いてくる | 設計判断 | Accepted | 2026-10-13 |
+| [0027](0027-verify-with-mock-not-jev.md) | 動作確認はダミーで行い、本物のJevは振る舞いを知りたいときだけ呼ぶ | 設計判断 | Accepted | 2026-10-13 |

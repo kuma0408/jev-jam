@@ -29,7 +29,9 @@ export async function POST(request: Request): Promise<Response> {
 
   // キーはサーバー側だけで読み、ブラウザには渡さない
   const apiKey = process.env.TYPESAFE_API_KEY;
-  const client = apiKey ? createJevClient(apiKey) : createMockClient();
+  // 動作確認のときは、キーがあってもダミーを使える（Jevのトークンを使わないため）。本番では受け付けない
+  const useMock = !apiKey || (body.mock === true && process.env.NODE_ENV !== "production");
+  const client = useMock ? createMockClient() : createJevClient(apiKey);
 
   // 候補すべての分を先に作る（ユーザーが選ぶ前に用意しておくため）
   const settled = await generateAll(client, body);
@@ -168,6 +170,7 @@ function parseRequest(value: unknown): SoloRequest {
     barInPhrase = 0,
     sustained = false,
     retargetable = false,
+    mock = false,
   } = value as Record<string, unknown>;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) fail("chords の数");
@@ -197,6 +200,7 @@ function parseRequest(value: unknown): SoloRequest {
     barInPhrase,
     sustained,
     retargetable,
+    mock: mock === true,
     memo,
   };
 }
