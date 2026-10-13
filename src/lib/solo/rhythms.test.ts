@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RHYTHMS, rhythmById, rhythmsFor, tempoBand } from "./rhythms.ts";
+import { RHYTHMS, boostSixteenths, rhythmById, rhythmsFor, tempoBand } from "./rhythms.ts";
 
 describe("tempoBand", () => {
   it("テンポを遅い・中間・速いの3つの帯に分ける", () => {
@@ -89,5 +89,47 @@ describe("rhythmsFor（テンポ帯ごとの語彙）", () => {
     const fast = rhythmsFor(220);
     const running = fast.filter((rhythm) => rhythm.hits.length >= 4);
     expect(running.length).toBeLessThanOrEqual(fast.length / 5);
+  });
+});
+
+describe("16分音符のリズム", () => {
+  const sixteenths = RHYTHMS.filter((rhythm) => rhythm.sixteenths);
+
+  it("16分音符を含むリズムには印が付いていて、どれもスウィングさせない", () => {
+    expect(sixteenths.length).toBeGreaterThanOrEqual(8);
+    for (const rhythm of sixteenths) {
+      expect(rhythm.straight).toBe(true);
+      expect(rhythm.hits.some((hit, i) => i > 0 && hit.at - rhythm.hits[i - 1]!.at === 0.25)).toBe(true);
+    }
+  });
+
+  it("バラードの中に差し込める、音数の少ない16分音符のリズムがある", () => {
+    const gentle = rhythmsFor(70).filter((rhythm) => rhythm.sixteenths && rhythm.energy <= 2);
+    expect(gentle.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("速いテンポには16分音符のリズムを出さない", () => {
+    expect(rhythmsFor(220).some((rhythm) => rhythm.sixteenths)).toBe(false);
+  });
+});
+
+describe("boostSixteenths（16分音符を選ばれやすくする）", () => {
+  const uniform = (bpm: number) => Object.fromEntries(rhythmsFor(bpm).map((rhythm) => [rhythm.id, 1]));
+  const share = (odds: Record<string, number>) => {
+    const total = Object.values(odds).reduce((sum, value) => sum + value, 0);
+    const marked = RHYTHMS.filter((rhythm) => rhythm.sixteenths).reduce((sum, rhythm) => sum + (odds[rhythm.id] ?? 0), 0);
+    return marked / total;
+  };
+
+  it("遅いテンポでは、16分音符のリズムの取り分を大きく増やす", () => {
+    expect(share(boostSixteenths(uniform(70), 70))).toBeGreaterThan(share(uniform(70)) * 1.4);
+  });
+
+  it("中間のテンポでも少し増やす", () => {
+    expect(share(boostSixteenths(uniform(130), 130))).toBeGreaterThan(share(uniform(130)));
+  });
+
+  it("16分音符以外のリズムの確率は変えない", () => {
+    expect(boostSixteenths({ "r-half": 0.3, "r-rest": 0.2 }, 70)).toEqual({ "r-half": 0.3, "r-rest": 0.2 });
   });
 });
