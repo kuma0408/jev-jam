@@ -738,6 +738,100 @@ input {
   color: var(--ink-soft);
 }
 
+/* ---- 自分でも弾く ---- */
+
+.jam {
+  margin-top: 24px;
+}
+
+.jam-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.jam-status {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.jam-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr);
+  gap: 8px;
+}
+
+.jam-tones {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.jam-tap,
+.jam-tone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 76px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  /* 連打したときに、文字の選択や拡大が起きないようにする */
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.jam-tap {
+  background: var(--ink);
+  border: 1.5px solid var(--ink);
+  color: var(--paper);
+}
+
+.jam-tone {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1.5px solid var(--line-strong);
+}
+
+.jam-tap:active:not(:disabled),
+.jam-tone:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.jam-tap:disabled,
+.jam-tone:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.jam-tone-name {
+  font-family: var(--font-latin);
+  font-size: 1.25rem;
+}
+
+.jam-kbd {
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-family: var(--font-latin);
+  font-size: 0.75rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+@media (max-width: 560px) {
+  .jam-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---- 盛り上がりのつまみ ---- */
 
 .energy {
@@ -782,6 +876,13 @@ input {
   border-radius: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+/* 叩き方で上乗せされたぶんは、斜線で示す（つまみの位置と区別する） */
+.energy-step[data-boosted="true"] {
+  background: repeating-linear-gradient(135deg, var(--ink) 0 6px, #4a4570 6px 12px);
+  border-color: var(--ink);
+  color: var(--paper);
 }
 
 /* いまの段階までを塗り、選んでいる段階は枠を太くして示す */

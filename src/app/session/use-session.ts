@@ -12,9 +12,10 @@ import {
   type SoloVoice,
 } from "../../lib/audio/instruments.ts";
 import { accompaniment, bassApproach, compVoicing } from "../../lib/band/accompaniment.ts";
+import { chordTones, pitchClassOf } from "../../lib/music/chord.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
-import type { Energy } from "../../lib/solo/energy.ts";
+import { type Energy, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
 import { planScoops } from "../../lib/solo/expression.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
 import { type ExpressiveVoice, createExpressiveVoice } from "./expressive-voice.ts";
@@ -35,9 +36,14 @@ export type SessionSettings = {
   voice: SoloVoice;
   /** ソロの音量（dB） */
   soloDb: number;
-  /** 盛り上がり。ソロの音数と強さ、伴奏の刻みに効く */
+  /** 盛り上がりのつまみ。ソロの音数と強さ、伴奏の刻みに効く */
   energy: Energy;
 };
+
+/** 鍵盤とは別に、ユーザーが自分で弾ける「いまのコードの音」の数 */
+export const JAM_TONE_COUNT = 4;
+/** 自分で弾く音の高さ。伴奏より上、ソロの邪魔にならない音域 */
+const JAM_TONE_BASE = 60;
 
 /** 音が実際に鳴るタイミングで届く通知。背景の演出などに使う */
 export type SessionEvent =
@@ -81,6 +87,16 @@ export type Session = {
   log: BarLog[];
   /** 音に合わせた通知を受け取る。戻り値を呼ぶと解除する */
   subscribe: (listener: (event: SessionEvent) => void) => () => void;
+  /** いまのコードを、押した瞬間に鳴らす（伴奏を自分で刻む）。刻んでいる間、自動の伴奏は黙る */
+  tap: () => void;
+  /** いまのコードの構成音を1つ鳴らす（合いの手を自分で入れる）。index は 0〜JAM_TONE_COUNT-1 */
+  playTone: (index: number) => void;
+  /** playTone で鳴る音の名前。停止中は空 */
+  tones: string[];
+  /** つまみの値に、ユーザーの叩き方を足した実際の盛り上がり。ソロと伴奏はこれに応える */
+  liveEnergy: Energy;
+  /** ユーザーが直近1小節にどれだけ叩いたか */
+  touch: Touch;
 };
 
 /** 再生中だけ存在する、音源と進行の状態。描画に関係しないのでrefで持つ */
@@ -112,6 +128,10 @@ type Engine = {
   selected: string | null;
   /** 古い応答を捨てるための通し番号 */
   requestToken: number;
+  /** ユーザーが叩いた時刻（performance.now のミリ秒）。直近1小節ぶんだけ残す */
+  taps: number[];
+  /** ユーザーが最後に伴奏を刻んだ小節。刻んでいる間は自動の伴奏を黙らせる */
+  lastCompTapBar: number;
   /** 次の小節のために最後に出した依頼。設定が変わったときに出し直す */
   lastRequest: { chords: string[]; previousPitch: number; memo: SoloMemo } | null;
 };
@@ -151,10 +171,21 @@ export function useSession(): Session {
   const [clientName, setClientName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<BarLog[]>([]);
+  /** ユーザーが直近1小節に叩いた回数 */
+  const [tapCount, setTapCount] = useState(0);
 
   // 再生ループから最新の設定を読むためのref
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+
+  /** 直近1小節に叩いた回数を数え直し、古い記録を捨てる */
+  const countTaps = useCallback((engine: Engine) => {
+    const barMs = (60_000 / settingsRef.current.bpm) * 4;
+    const since = performance.now() - barMs;
+    engine.taps = engine.taps.filter((at) => at >= since);
+    setTapCount(engine.taps.length);
+    return engine.taps.length;
+  }, []);
 
   const emit = useCallback((event: SessionEvent) => {
     for (const listener of listenersRef.current) {
@@ -180,8 +211,18 @@ export function useSession(): Session {
         engine.prepared = new Map();
       }
       setReadyMs(null);
-      const { bpm, strategy, voice, energy } = settingsRef.current;
-      return requestSolos({ chords, strategy, bpm, previousPitch, range: SOLO_INSTRUMENTS[voice].range, energy, memo })
+      const { bpm, strategy, voice, energy: dial } = settingsRef.current;
+      const taps = engine.taps.length;
+      return requestSolos({
+        chords,
+        strategy,
+        bpm,
+        previousPitch,
+        range: SOLO_INSTRUMENTS[voice].range,
+        energy: liveEnergy(dial, taps),
+        touch: touchOf(taps),
+        memo,
+      })
         .then((response) => {
           if (engineRef.current !== engine || engine.requestToken !== token) return;
           engine.prepared = new Map(Object.entries(response.results));
@@ -221,9 +262,12 @@ export function useSession(): Session {
       const at = (beats: number) => time + swingBeats(beats, ratio) * beat;
       const midi = (pitch: number) => tone.Frequency(pitch, "midi").toFrequency();
 
-      // 伴奏。ベースの4拍目だけは、次のコードが決まるのを待って onLastBeat で鳴らす
-      const { energy } = settingsRef.current;
+      // 伴奏。ベースの4拍目だけは、次のコードが決まるのを待って onLastBeat で鳴らす。
+      // ユーザーが前の小節で伴奏を刻んでいたら、コードは任せて自動の伴奏を黙らせる
+      const energy = liveEnergy(settingsRef.current.energy, countTaps(engine));
+      const userComping = engine.lastCompTapBar >= bar - 1;
       for (const event of accompaniment(current, { bar, energy, deferLastBass: true })) {
+        if (userComping && event.part === "comp") continue;
         const start = at(event.startBeats);
         const duration = Math.max(0.04, at(event.startBeats + event.durationBeats) - start);
         if (event.part === "bass") {
@@ -306,7 +350,7 @@ export function useSession(): Session {
   const onLastBeat = useCallback((engine: Engine, time: number) => {
     const current = engine.history.at(-1);
     // 静かなとき、ベースは2分音符で弾いていて4拍目が無い
-    if (current === undefined || settingsRef.current.energy === 1) return;
+    if (current === undefined || liveEnergy(settingsRef.current.energy, engine.taps.length) === 1) return;
     const options = nextChordCandidates(engine.history);
     const target = options.find((candidate) => candidate.chord === engine.selected)?.chord ?? options[0]!.chord;
     const { tone } = engine;
@@ -345,6 +389,7 @@ export function useSession(): Session {
     setCandidates([]);
     setSelected(null);
     setReadyMs(null);
+    setTapCount(0);
   }, []);
 
   const start = useCallback(async () => {
@@ -386,6 +431,8 @@ export function useSession(): Session {
         prepared: new Map(),
         selected: null,
         requestToken: 0,
+        taps: [],
+        lastCompTapBar: -1,
         lastRequest: null,
       };
       engine.rideNoise.chain(engine.ride, engine.rideFilter);
@@ -458,6 +505,49 @@ export function useSession(): Session {
     );
   }, []);
 
+  /** ユーザーが叩いたことを記録する。盛り上がりが変わればソロの作り直しが走る */
+  const recordTap = useCallback(
+    (engine: Engine) => {
+      engine.taps.push(performance.now());
+      countTaps(engine);
+    },
+    [countTaps],
+  );
+
+  const tap = useCallback(() => {
+    const engine = engineRef.current;
+    const current = engine?.history.at(-1);
+    if (!engine || current === undefined) return;
+    const { tone } = engine;
+    engine.comp.triggerAttackRelease(
+      compVoicing(current).map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
+      0.3,
+      tone.now(),
+      0.55,
+    );
+    engine.lastCompTapBar = engine.bar;
+    recordTap(engine);
+  }, [recordTap]);
+
+  const playTone = useCallback(
+    (index: number) => {
+      const engine = engineRef.current;
+      const current = engine?.history.at(-1);
+      if (!engine || current === undefined) return;
+      const note = chordTones(current)[index];
+      if (note === undefined) return;
+      const { tone } = engine;
+      engine.comp.triggerAttackRelease(
+        tone.Frequency(JAM_TONE_BASE + pitchClassOf(note), "midi").toFrequency(),
+        0.45,
+        tone.now(),
+        0.6,
+      );
+      recordTap(engine);
+    },
+    [recordTap],
+  );
+
   const updateSettings = useCallback((patch: Partial<SessionSettings>) => {
     setSettings((current) => ({ ...current, ...patch }));
   }, []);
@@ -471,14 +561,18 @@ export function useSession(): Session {
     }
   }, [settings.bpm, settings.soloDb]);
 
-  // 盛り上がりを動かしたら、次の小節のソロを作り直す。つまみの効きを1小節早めるため
+  const live = liveEnergy(settings.energy, tapCount);
+  const touch = touchOf(tapCount);
+
+  // 盛り上がりが変わったら（つまみを動かした、または叩き方が変わった）、次の小節のソロを作り直す。
+  // 効くのを1小節早めるため
   useEffect(() => {
     const engine = engineRef.current;
     if (engine?.lastRequest && engine.bar > 0) {
       const { chords, previousPitch, memo } = engine.lastRequest;
       void prepare(engine, chords, previousPitch, memo, true);
     }
-  }, [settings.energy, prepare]);
+  }, [live, touch, prepare]);
 
   // 画面を離れるときに音を止める
   useEffect(() => stop, [stop]);
@@ -500,7 +594,31 @@ export function useSession(): Session {
       error,
       log,
       subscribe,
+      tap,
+      playTone,
+      tones: chord === null ? [] : chordTones(chord).slice(0, JAM_TONE_COUNT),
+      liveEnergy: live,
+      touch,
     }),
-    [status, start, stop, settings, updateSettings, chord, candidates, selected, choose, readyMs, clientName, error, log, subscribe],
+    [
+      status,
+      start,
+      stop,
+      settings,
+      updateSettings,
+      chord,
+      candidates,
+      selected,
+      choose,
+      readyMs,
+      clientName,
+      error,
+      log,
+      subscribe,
+      tap,
+      playTone,
+      live,
+      touch,
+    ],
   );
 }

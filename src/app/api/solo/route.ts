@@ -3,7 +3,7 @@ import { NOTE_NAMES } from "../../../lib/music/chord.ts";
 import { KNOWN_CHORDS } from "../../../lib/progression/candidates.ts";
 import { SOLO_STRATEGIES, type SoloBar, type SoloMemo, type SoloRequest, type SoloResponse } from "../../../lib/solo/api.ts";
 import { SLOTS_PER_BAR, generateBar } from "../../../lib/solo/generate.ts";
-import { isEnergy } from "../../../lib/solo/energy.ts";
+import { TOUCHES, isEnergy } from "../../../lib/solo/energy.ts";
 import { generatePhraseBars } from "../../../lib/solo/generate-phrases.ts";
 import { legacyToSoloBar } from "../../../lib/solo/legacy-bar.ts";
 import type { SlotChoice } from "../../../lib/solo/phrase.ts";
@@ -51,6 +51,7 @@ async function generateAll(client: DecisionClient, body: SoloRequest): Promise<P
         range: body.range,
         memo: body.memo,
         energy: body.energy,
+        touch: body.touch,
       });
       return bars.map((value) => ({ status: "fulfilled", value }));
     } catch (reason) {
@@ -100,7 +101,7 @@ function parseMemo(value: unknown): SoloMemo | null {
 
 function parseRequest(value: unknown): SoloRequest | null {
   if (typeof value !== "object" || value === null) return null;
-  const { chords, strategy, bpm, previousPitch, range, energy } = value as Record<string, unknown>;
+  const { chords, strategy, bpm, previousPitch, range, energy, touch } = value as Record<string, unknown>;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) return null;
   if (!chords.every((chord) => typeof chord === "string" && KNOWN_CHORDS.includes(chord))) return null;
@@ -109,6 +110,8 @@ function parseRequest(value: unknown): SoloRequest | null {
   if (typeof bpm !== "number" || !(bpm >= 40 && bpm <= 240)) return null;
   if (!isMidiPitch(previousPitch)) return null;
   if (!isEnergy(energy)) return null;
+  const touchValue = TOUCHES.find((option) => option === touch);
+  if (!touchValue) return null;
 
   if (typeof range !== "object" || range === null) return null;
   const { low, high } = range as Record<string, unknown>;
@@ -117,5 +120,5 @@ function parseRequest(value: unknown): SoloRequest | null {
   const memo = parseMemo((value as Record<string, unknown>).memo);
   if (!memo) return null;
 
-  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, memo };
+  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, touch: touchValue, memo };
 }

@@ -5,6 +5,7 @@ import { BarLogPanel } from "./components/bar-log.tsx";
 import { isEnergy } from "../lib/solo/energy.ts";
 import { ControlDock } from "./components/control-dock.tsx";
 import { EnergyDial } from "./components/energy-dial.tsx";
+import { JAM_KEYS, JamPad } from "./components/jam-pad.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { useSession } from "./session/use-session.ts";
@@ -15,13 +16,27 @@ export default function Page() {
   const playing = status === "playing";
 
   const { energy } = session.settings;
-  const { updateSettings } = session;
+  const { updateSettings, tap, playTone } = session;
 
   // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // ボタンにフォーカスがあるときのスペースは、そのボタンを押す操作として扱う
+      const onButton = event.target instanceof HTMLButtonElement;
+      if (playing && !event.repeat && !onButton) {
+        if (event.key === " ") {
+          tap();
+          event.preventDefault();
+          return;
+        }
+        const tone = JAM_KEYS.indexOf(event.key.toLowerCase() as (typeof JAM_KEYS)[number]);
+        if (tone >= 0) {
+          playTone(tone);
+          return;
+        }
+      }
       if (playing && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
         const next = energy + (event.key === "ArrowUp" ? 1 : -1);
         if (isEnergy(next)) {
@@ -38,13 +53,13 @@ export default function Page() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [candidates, choose, energy, playing, updateSettings]);
+  }, [candidates, choose, energy, playing, playTone, tap, updateSettings]);
 
   const preparing = playing && session.readyMs === null;
 
   return (
     <>
-      <ParticleField subscribe={session.subscribe} energy={session.settings.energy} />
+      <ParticleField subscribe={session.subscribe} energy={session.liveEnergy} />
       <main className="shell">
         <header className="top">
           <h1 className="brand">Jev Session</h1>
@@ -146,7 +161,12 @@ export default function Page() {
           </div>
         </section>
 
-        <EnergyDial energy={session.settings.energy} onChange={(energy) => session.updateSettings({ energy })} />
+        <JamPad playing={playing} tones={session.tones} touch={session.touch} onTap={tap} onTone={playTone} />
+        <EnergyDial
+          energy={session.settings.energy}
+          live={session.liveEnergy}
+          onChange={(energy) => session.updateSettings({ energy })}
+        />
         <ControlDock settings={session.settings} updateSettings={session.updateSettings} />
         <BarLogPanel log={session.log} />
       </main>

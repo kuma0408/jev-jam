@@ -1,5 +1,5 @@
 // 画面と中継API（/api/solo）の間でやり取りする型
-import type { Energy } from "./energy.ts";
+import type { Energy, Touch } from "./energy.ts";
 import type { SlotChoice } from "./phrase.ts";
 
 /**
@@ -58,8 +58,10 @@ export type SoloRequest = {
   previousPitch: number;
   /** ソロの楽器の音域（MIDIノート番号） */
   range: { low: number; high: number };
-  /** ユーザーがつまみで決めた盛り上がり */
+  /** 盛り上がり。つまみの値に、ユーザーの叩き方を足したもの */
   energy: Energy;
+  /** ユーザーが伴奏をどれだけ叩いているか */
+  touch: Touch;
   memo: SoloMemo;
 };
 

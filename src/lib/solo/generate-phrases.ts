@@ -3,7 +3,7 @@ import { sampleFromDistribution } from "../music/sample.ts";
 import type { SoloBar, SoloMemo } from "./api.ts";
 import type { Cell } from "./cells.ts";
 import { CONTOURS, type Contour, contourById } from "./contours.ts";
-import { ENERGY, type Energy } from "./energy.ts";
+import { ENERGY, type Energy, TOUCH_CUE, type Touch } from "./energy.ts";
 import type { ChoiceQuestion } from "./questions.ts";
 import { type Dynamics, type Shape, renderCells } from "./render-cells.ts";
 import { RHYTHMS, type Rhythm, rhythmById, rhythmsFor } from "./rhythms.ts";
@@ -16,8 +16,10 @@ export type PhraseBarsInput = {
   range: { low: number; high: number };
   /** 直前の小節の記録。cells に [前半のリズム, 前半の動き, 後半のリズム, 後半の動き] のIDが入る */
   memo: SoloMemo;
-  /** ユーザーがつまみで決めた盛り上がり */
+  /** 盛り上がり。つまみの値に、ユーザーの叩き方を足したもの */
   energy: Energy;
+  /** ユーザーが伴奏をどれだけ叩いているか */
+  touch?: Touch;
 };
 
 const DYNAMICS: Record<Dynamics, string> = {
@@ -126,6 +128,7 @@ export async function generatePhraseBars(
     style: "jazz / neo soul jam session, improvised horn solo",
     tempo: `${input.bpm} BPM, ${tempoFeel(input.bpm)}`,
     bandleader_cue: ENERGY[input.energy].cue,
+    ...(input.touch && input.touch !== "none" ? { accompanist: TOUCH_CUE[input.touch] } : {}),
     previous_bar_phrase: previousPhrase.length > 0 ? previousPhrase : "nothing yet, the solo is just starting",
     ...(input.memo.dynamics ? { previous_bar_volume: input.memo.dynamics } : {}),
   };
