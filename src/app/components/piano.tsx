@@ -48,7 +48,7 @@ export function AdventureMark({ level }: { level: Adventure }) {
 
 type Props = Pick<
   Session,
-  "candidates" | "nextChord" | "chosenByUser" | "locked" | "choose" | "subscribe" | "tones" | "playTone"
+  "candidates" | "nextChord" | "chosenByUser" | "locked" | "choose" | "releaseChord" | "subscribe" | "tones" | "playTone"
 > & {
   /** いま鳴っているコード。停止中は null */
   currentChord: string | null;
@@ -62,6 +62,7 @@ export function Piano({
   chosenByUser,
   locked,
   choose,
+  releaseChord,
   subscribe,
   tones,
   playTone,
@@ -92,7 +93,7 @@ export function Piano({
     <div className="piano" data-locked={locked}>
       <div className="piano-rail">
         <span className="piano-rail-label" aria-live="off">
-          {locked && nextChord ? `つぎは ${nextChord}` : "3拍目のうちに選ぶ"}
+          {locked && nextChord ? `つぎは ${nextChord}` : "コードを弾くと、バンドが付いてくる"}
         </span>
         <BarTimer subscribe={subscribe} bpm={bpm} active={playing} />
       </div>
@@ -134,7 +135,23 @@ export function Piano({
                       aria-label={`${candidate.chord}、${ADVENTURE_LABELS[candidate.adventure]}${index === 0 ? "、既定" : ""}、${candidate.reason}`}
                       aria-keyshortcuts={String(index + 1)}
                       title={candidate.reason}
-                      onClick={() => choose(candidate.chord)}
+                      // 鍵盤として弾く: 押した瞬間に鳴り、離すと止まる。クリック（押して離す）を待たない
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        choose(candidate.chord);
+                      }}
+                      onPointerUp={releaseChord}
+                      onPointerLeave={releaseChord}
+                      onPointerCancel={releaseChord}
+                      onKeyDown={(event) => {
+                        if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
+                          event.preventDefault();
+                          choose(candidate.chord);
+                        }
+                      }}
+                      onKeyUp={(event) => {
+                        if (event.key === "Enter" || event.key === " ") releaseChord();
+                      }}
                     >
                       <span className="chip-number">{index + 1}</span>
                       <span className="chip-chord">{candidate.chord}</span>

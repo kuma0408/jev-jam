@@ -7,6 +7,7 @@ import { ControlDock } from "./components/control-dock.tsx";
 import { EnergyDial } from "./components/energy-dial.tsx";
 import { JAM_KEYS, JamPad } from "./components/jam-pad.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
+import { PianoRoll } from "./components/piano-roll.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { useSession } from "./session/use-session.ts";
 
@@ -16,7 +17,7 @@ export default function Page() {
   const playing = status === "playing";
 
   const { energy } = session.settings;
-  const { updateSettings, tap, playTone } = session;
+  const { updateSettings, tap, playTone, releaseChord } = session;
 
   // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
   useEffect(() => {
@@ -52,13 +53,21 @@ export default function Page() {
       }
       const digit = /^(?:Digit|Numpad)([1-9])$/.exec(code)?.[1];
       const candidate = digit === undefined ? undefined : candidates[Number(digit) - 1];
-      if (candidate) {
+      if (candidate && !event.repeat) {
         choose(candidate.chord);
       }
     };
+    // 数字キーを離したら、押さえていたコードの音を止める
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) releaseChord();
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [candidates, choose, energy, playing, playTone, tap, updateSettings]);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [candidates, choose, energy, playing, playTone, releaseChord, tap, updateSettings]);
 
   const preparing = playing && session.readyMs === null;
 
@@ -129,6 +138,8 @@ export default function Page() {
           </button>
         </section>
 
+        <PianoRoll subscribe={session.subscribe} playing={playing} />
+
         <section className="chooser" aria-labelledby="chooser-heading">
           <h2 id="chooser-heading" className="visually-hidden">
             次のコードを選ぶ
@@ -139,6 +150,7 @@ export default function Page() {
             chosenByUser={session.chosenByUser}
             locked={session.locked}
             choose={choose}
+            releaseChord={releaseChord}
             tones={session.tones}
             playTone={playTone}
             subscribe={session.subscribe}
@@ -163,7 +175,7 @@ export default function Page() {
             </ul>
             <p className="hint">
               {playing
-                ? "次に進めるコードが鍵の上に出ます。数字キーでも選べます。3拍目のうちに選ばなければ「自動」の印のコードへ進みます。"
+                ? "鍵の上のコードを押すと、その場で鳴って、バンドが次の拍から付いてきます（数字キーでも弾けます）。弾かなければ「自動」の印のコードへ進みます。"
                 : "開始すると、次に進めるコードが鍵の上に出ます。"}
             </p>
           </div>
