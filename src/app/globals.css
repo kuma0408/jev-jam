@@ -738,6 +738,85 @@ input {
   color: var(--ink-soft);
 }
 
+/* ---- 盛り上がりのつまみ ---- */
+
+.energy {
+  margin: 24px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.energy-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.energy-hint {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.energy-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.energy-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 72px;
+  padding: 10px 6px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* いまの段階までを塗り、選んでいる段階は枠を太くして示す */
+.energy-step[data-active="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.energy-step:has(input:checked) {
+  box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--ink);
+}
+
+.energy-step:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 6px;
+}
+
+.energy-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 24px;
+}
+
+.energy-bar {
+  width: 5px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.energy-name {
+  font-size: 0.875rem;
+}
+
 /* ---- 演奏の設定 ---- */
 
 .dock {

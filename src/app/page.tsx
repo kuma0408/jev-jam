@@ -2,7 +2,9 @@
 
 import { useEffect } from "react";
 import { BarLogPanel } from "./components/bar-log.tsx";
+import { isEnergy } from "../lib/solo/energy.ts";
 import { ControlDock } from "./components/control-dock.tsx";
+import { EnergyDial } from "./components/energy-dial.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { useSession } from "./session/use-session.ts";
@@ -12,11 +14,23 @@ export default function Page() {
   const { status, candidates, nextChord, choose } = session;
   const playing = status === "playing";
 
-  // 数字キーで候補を選べるようにする
+  const { energy } = session.settings;
+  const { updateSettings } = session;
+
+  // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (playing && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        const next = energy + (event.key === "ArrowUp" ? 1 : -1);
+        if (isEnergy(next)) {
+          updateSettings({ energy: next });
+        }
+        // 再生中はページのスクロールより演奏の操作を優先する
+        event.preventDefault();
+        return;
+      }
       const candidate = candidates[Number(event.key) - 1];
       if (candidate) {
         choose(candidate.chord);
@@ -24,13 +38,13 @@ export default function Page() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [candidates, choose]);
+  }, [candidates, choose, energy, playing, updateSettings]);
 
   const preparing = playing && session.readyMs === null;
 
   return (
     <>
-      <ParticleField subscribe={session.subscribe} />
+      <ParticleField subscribe={session.subscribe} energy={session.settings.energy} />
       <main className="shell">
         <header className="top">
           <h1 className="brand">Jev Session</h1>
@@ -132,6 +146,7 @@ export default function Page() {
           </div>
         </section>
 
+        <EnergyDial energy={session.settings.energy} onChange={(energy) => session.updateSettings({ energy })} />
         <ControlDock settings={session.settings} updateSettings={session.updateSettings} />
         <BarLogPanel log={session.log} />
       </main>

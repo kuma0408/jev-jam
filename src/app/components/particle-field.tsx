@@ -75,8 +75,14 @@ function colorOfChord(chord: string): number {
   return ((parseChord(chord).root * 7) % 12) % COLORS.length;
 }
 
-export function ParticleField({ subscribe }: { subscribe: Session["subscribe"] }) {
+/** 盛り上がり（1〜4）ごとの、拍で押し広げる強さ */
+const KICK_BY_ENERGY = [0.55, 0.85, 1.15, 1.5];
+
+export function ParticleField({ subscribe, energy: level }: { subscribe: Session["subscribe"]; energy: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // 盛り上がりが変わるたびに粒子を作り直さないよう、最新の値をrefで読む
+  const levelRef = useRef(level);
+  levelRef.current = level;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -256,7 +262,7 @@ export function ParticleField({ subscribe }: { subscribe: Session["subscribe"] }
         lastBeatAt = now;
         energy = 1;
         // 小節の頭は強く、ほかの拍は軽く押し広げる
-        const kick = event.beat === 0 ? 1 : 0.55;
+        const kick = (event.beat === 0 ? 1 : 0.55) * (KICK_BY_ENERGY[levelRef.current - 1] ?? 1);
         pulseVelocity += kick * ((Math.PI * 2) / (beatSeconds * 0.9));
         return;
       }

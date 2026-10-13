@@ -6,7 +6,7 @@ import type { SoloStrategy } from "../../lib/solo/api.ts";
 import { BPM_MAX, BPM_MIN, SOLO_DB_MAX, SOLO_DB_MIN, type Session } from "../session/use-session.ts";
 
 const STRATEGY_LABELS: Record<SoloStrategy, string> = {
-  cells: "フレーズの型から選ぶ",
+  cells: "リズムと動きを選ぶ",
   batch: "1音ずつ（1回で8音）",
   "two-stage": "1音ずつ（方針→8音）",
 };

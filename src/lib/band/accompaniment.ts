@@ -1,6 +1,7 @@
 // ソロの後ろで鳴る伴奏（ベース、コード、シンバル）の1小節ぶんを作る。ルールだけで決め、Jevは使わない。
 import { bassPitch } from "../audio/instruments.ts";
 import { chordTones, parseChord, pitchClassOf } from "../music/chord.ts";
+import type { Energy } from "../solo/energy.ts";
 
 export type BandPart = "bass" | "comp" | "ride";
 
@@ -20,34 +21,69 @@ export type AccompanimentOptions = {
   bar: number;
   /** 次に進みそうなコード。分かっていれば、ベースが4拍目でそのルートへ寄る */
   nextChord?: string;
+  /** 盛り上がり。静かなほど手数を減らし、激しいほど増やす。省略時は2 */
+  energy?: Energy;
+  /** true ならベースの4拍目を返さない。次のコードが決まってから bassApproach で求める */
+  deferLastBass?: boolean;
 };
 
 type CompHit = { at: number; dur: number; velocity: number };
+type CompPattern = { hits: readonly CompHit[]; energies: readonly Energy[] };
 
-/** コード伴奏のリズムの型。裏拍から入る、短く切る、間を空ける、を混ぜる */
-export const COMP_PATTERNS: readonly (readonly CompHit[])[] = [
-  // チャールストン: 1拍目と、2拍目の裏
-  [
-    { at: 0, dur: 0.9, velocity: 0.45 },
-    { at: 1.5, dur: 1.3, velocity: 0.5 },
-  ],
-  // 2拍目と4拍目の裏を短く突く
-  [
-    { at: 1.5, dur: 0.4, velocity: 0.5 },
-    { at: 3.5, dur: 0.5, velocity: 0.45 },
-  ],
+/** コード伴奏のリズムの型。裏拍から入る、短く切る、間を空ける、を混ぜる。盛り上がりごとに使う型を分ける */
+export const COMP_PATTERNS: readonly CompPattern[] = [
   // 頭から長く伸ばす
-  [{ at: 0, dur: 3.5, velocity: 0.4 }],
-  // 裏から入って、3拍目で受け、最後に次の小節へ食い込む
-  [
-    { at: 0.5, dur: 0.4, velocity: 0.45 },
-    { at: 2, dur: 1, velocity: 0.4 },
-    { at: 3.5, dur: 0.5, velocity: 0.5 },
-  ],
+  { energies: [1, 2], hits: [{ at: 0, dur: 3.5, velocity: 0.4 }] },
   // 前半は休み、3拍目の裏から伸ばす
-  [{ at: 2.5, dur: 1.4, velocity: 0.45 }],
+  { energies: [1, 2], hits: [{ at: 2.5, dur: 1.4, velocity: 0.42 }] },
+  // チャールストン: 1拍目と、2拍目の裏
+  {
+    energies: [2, 3],
+    hits: [
+      { at: 0, dur: 0.9, velocity: 0.45 },
+      { at: 1.5, dur: 1.3, velocity: 0.5 },
+    ],
+  },
+  // 2拍目と4拍目の裏を短く突く
+  {
+    energies: [2, 3, 4],
+    hits: [
+      { at: 1.5, dur: 0.4, velocity: 0.5 },
+      { at: 3.5, dur: 0.5, velocity: 0.45 },
+    ],
+  },
+  // 裏から入って、3拍目で受け、最後に次の小節へ食い込む
+  {
+    energies: [3, 4],
+    hits: [
+      { at: 0.5, dur: 0.4, velocity: 0.45 },
+      { at: 2, dur: 1, velocity: 0.4 },
+      { at: 3.5, dur: 0.5, velocity: 0.5 },
+    ],
+  },
+  // 頭を短く突き、裏拍で畳みかける
+  {
+    energies: [4],
+    hits: [
+      { at: 0, dur: 0.4, velocity: 0.5 },
+      { at: 1.5, dur: 0.5, velocity: 0.5 },
+      { at: 2.5, dur: 0.4, velocity: 0.45 },
+      { at: 3.5, dur: 0.5, velocity: 0.55 },
+    ],
+  },
+  // 裏拍を4つ続けて押す
+  {
+    energies: [4],
+    hits: [
+      { at: 0.5, dur: 0.4, velocity: 0.5 },
+      { at: 1.5, dur: 0.4, velocity: 0.5 },
+      { at: 2.5, dur: 0.4, velocity: 0.5 },
+      { at: 3.5, dur: 0.5, velocity: 0.55 },
+    ],
+  },
 ];
 
+const DEFAULT_ENERGY: Energy = 2;
 const COMP_LOW = 52;
 const BARS_PER_PHRASE = 4;
 
@@ -58,19 +94,35 @@ function intervals(chord: string): { third: number; fifth: number; seventh: numb
   return { third: third!, fifth: fifth!, seventh: seventh! };
 }
 
-/** 4分音符で歩くベース。ルート、3rd、5thと上がり、4拍目は次のルートへ半音で寄る */
-function walkingBass(chord: string, nextChord: string | undefined): BandEvent[] {
+/** ベースが次のコードのルートへ半音で寄るときの音。いまのコードの5thから見て近い高さを狙う */
+export function bassApproach(chord: string, nextChord: string): number {
+  const fifthPitch = bassPitch(parseChord(chord).root) + intervals(chord).fifth;
+  const nextRoot = bassPitch(parseChord(nextChord).root);
+  const target = nextRoot + 12 <= fifthPitch + 6 ? nextRoot + 12 : nextRoot;
+  return target > fifthPitch ? target - 1 : target + 1;
+}
+
+/**
+ * ベース。静かなときは2分音符でルートと5thだけ、それ以外は4分音符で歩く。
+ * 歩くときは、ルート、3rd、5thと上がり、4拍目は次のルートへ半音で寄る。
+ */
+function bass(chord: string, options: AccompanimentOptions, energy: Energy): BandEvent[] {
   const rootPitch = bassPitch(parseChord(chord).root);
   const { third, fifth, seventh } = intervals(chord);
-  const line = [rootPitch, rootPitch + third, rootPitch + fifth];
 
-  if (nextChord) {
-    // 次のルートを、いまの音に近い高さで狙い、下からか上から半音で寄る
-    const nextRoot = bassPitch(parseChord(nextChord).root);
-    const target = nextRoot + 12 <= line[2]! + 6 ? nextRoot + 12 : nextRoot;
-    line.push(target > line[2]! ? target - 1 : target + 1);
-  } else {
-    line.push(rootPitch + seventh);
+  if (energy === 1) {
+    return [rootPitch, rootPitch + fifth].map((pitch, index) => ({
+      part: "bass",
+      startBeats: index * 2,
+      durationBeats: 1.9,
+      pitches: [pitch],
+      velocity: index === 0 ? 0.75 : 0.6,
+    }));
+  }
+
+  const line = [rootPitch, rootPitch + third, rootPitch + fifth];
+  if (!options.deferLastBass) {
+    line.push(options.nextChord ? bassApproach(chord, options.nextChord) : rootPitch + seventh);
   }
   return line.map((pitch, beat) => ({
     part: "bass",
@@ -82,7 +134,7 @@ function walkingBass(chord: string, nextChord: string | undefined): BandEvent[] 
 }
 
 /** ルートを省いた構成音を、エレピの中音域に並べる（ルートはベースに任せる） */
-function compVoicing(chord: string): number[] {
+export function compVoicing(chord: string): number[] {
   return chordTones(chord)
     .slice(1)
     .map((note) => {
@@ -92,7 +144,9 @@ function compVoicing(chord: string): number[] {
 }
 
 /** シンバルレガート（チン・チンチキ）。2拍目と4拍目を強く、4小節ごとに刻みを足して区切る */
-function ride(bar: number): BandEvent[] {
+function ride(bar: number, energy: Energy): BandEvent[] {
+  // 静かなときは撫でる程度、激しいときは強く叩く
+  const loudness = 0.55 + 0.15 * energy;
   const hits = [
     { at: 0, velocity: 0.22 },
     { at: 1, velocity: 0.34 },
@@ -105,7 +159,13 @@ function ride(bar: number): BandEvent[] {
     hits.push({ at: 2.5, velocity: 0.2 }, { at: 3.25, velocity: 0.26 }, { at: 3.75, velocity: 0.3 });
     hits.sort((a, b) => a.at - b.at);
   }
-  return hits.map((hit) => ({ part: "ride", startBeats: hit.at, durationBeats: 0.1, pitches: [], velocity: hit.velocity }));
+  return hits.map((hit) => ({
+    part: "ride",
+    startBeats: hit.at,
+    durationBeats: 0.1,
+    pitches: [],
+    velocity: Math.min(1, hit.velocity * loudness),
+  }));
 }
 
 /**
@@ -118,14 +178,16 @@ export function accompaniment(
   options: AccompanimentOptions,
   random: () => number = Math.random,
 ): BandEvent[] {
-  const pattern = COMP_PATTERNS[Math.min(COMP_PATTERNS.length - 1, Math.floor(random() * COMP_PATTERNS.length))]!;
+  const energy = options.energy ?? DEFAULT_ENERGY;
+  const patterns = COMP_PATTERNS.filter((pattern) => pattern.energies.includes(energy));
+  const pattern = patterns[Math.min(patterns.length - 1, Math.floor(random() * patterns.length))]!;
   const voicing = compVoicing(chord);
-  const comp: BandEvent[] = pattern.map((hit) => ({
+  const comp: BandEvent[] = pattern.hits.map((hit) => ({
     part: "comp",
     startBeats: hit.at,
     durationBeats: hit.dur,
     pitches: voicing,
     velocity: hit.velocity,
   }));
-  return [...walkingBass(chord, options.nextChord), ...comp, ...ride(options.bar)];
+  return [...bass(chord, options, energy), ...comp, ...ride(options.bar, energy)];
 }

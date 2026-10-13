@@ -11,7 +11,7 @@ import {
   SOLO_VOICES,
   type SoloVoice,
 } from "../../lib/audio/instruments.ts";
-import { accompaniment } from "../../lib/band/accompaniment.ts";
+import { accompaniment, bassApproach, compVoicing } from "../../lib/band/accompaniment.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import type { Energy } from "../../lib/solo/energy.ts";
@@ -108,6 +108,8 @@ type Engine = {
   selected: string | null;
   /** 古い応答を捨てるための通し番号 */
   requestToken: number;
+  /** 次の小節のために最後に出した依頼。設定が変わったときに出し直す */
+  lastRequest: { chords: string[]; previousPitch: number; memo: SoloMemo } | null;
 };
 
 async function requestSolos(request: SoloRequest): Promise<SoloResponse> {
@@ -164,25 +166,32 @@ export function useSession(): Session {
   }, []);
 
   /** 指定したコードすべての分のソロを、先に依頼しておく */
-  const prepare = useCallback((engine: Engine, chords: string[], previousPitch: number, memo: SoloMemo) => {
-    const token = ++engine.requestToken;
-    const requestedAt = performance.now();
-    engine.prepared = new Map();
-    setReadyMs(null);
-    const { bpm, strategy, voice, energy } = settingsRef.current;
-    return requestSolos({ chords, strategy, bpm, previousPitch, range: SOLO_INSTRUMENTS[voice].range, energy, memo })
-      .then((response) => {
-        if (engineRef.current !== engine || engine.requestToken !== token) return;
-        engine.prepared = new Map(Object.entries(response.results));
-        setReadyMs(performance.now() - requestedAt);
-        setClientName(response.client);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (engineRef.current !== engine || engine.requestToken !== token) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
-      });
-  }, []);
+  const prepare = useCallback(
+    (engine: Engine, chords: string[], previousPitch: number, memo: SoloMemo, keepPrepared = false) => {
+      const token = ++engine.requestToken;
+      const requestedAt = performance.now();
+      engine.lastRequest = { chords, previousPitch, memo };
+      // 出し直しのときは、新しい分が届くまで用意済みのソロを残しておく（間に合わなければそれを使う）
+      if (!keepPrepared) {
+        engine.prepared = new Map();
+      }
+      setReadyMs(null);
+      const { bpm, strategy, voice, energy } = settingsRef.current;
+      return requestSolos({ chords, strategy, bpm, previousPitch, range: SOLO_INSTRUMENTS[voice].range, energy, memo })
+        .then((response) => {
+          if (engineRef.current !== engine || engine.requestToken !== token) return;
+          engine.prepared = new Map(Object.entries(response.results));
+          setReadyMs(performance.now() - requestedAt);
+          setClientName(response.client);
+          setError(null);
+        })
+        .catch((cause: unknown) => {
+          if (engineRef.current !== engine || engine.requestToken !== token) return;
+          setError(cause instanceof Error ? cause.message : String(cause));
+        });
+    },
+    [],
+  );
 
   /** 小節の頭ごとに呼ばれ、その小節の音を予約して次の小節の準備を始める */
   const onBar = useCallback(
@@ -208,8 +217,9 @@ export function useSession(): Session {
       const at = (beats: number) => time + swingBeats(beats, ratio) * beat;
       const midi = (pitch: number) => tone.Frequency(pitch, "midi").toFrequency();
 
-      // 伴奏。ベースは、選ばれなければ進む先（既定の候補）のルートへ寄っていく
-      for (const event of accompaniment(current, { bar, nextChord: next[0]?.chord })) {
+      // 伴奏。ベースの4拍目だけは、次のコードが決まるのを待って onLastBeat で鳴らす
+      const { energy } = settingsRef.current;
+      for (const event of accompaniment(current, { bar, energy, deferLastBass: true })) {
         const start = at(event.startBeats);
         const duration = Math.max(0.04, at(event.startBeats + event.durationBeats) - start);
         if (event.part === "bass") {
@@ -275,6 +285,26 @@ export function useSession(): Session {
     [emit, prepare],
   );
 
+  /**
+   * 4拍目の頭で呼ばれ、ベースを次のコードのルートへ半音で寄せる。
+   * ユーザーがこの時点までに選んでいればそのコードへ、選んでいなければ既定の候補へ向かう。
+   */
+  const onLastBeat = useCallback((engine: Engine, time: number) => {
+    const current = engine.history.at(-1);
+    // 静かなとき、ベースは2分音符で弾いていて4拍目が無い
+    if (current === undefined || settingsRef.current.energy === 1) return;
+    const options = nextChordCandidates(engine.history);
+    const target = options.find((candidate) => candidate.chord === engine.selected)?.chord ?? options[0]!.chord;
+    const { tone } = engine;
+    const beat = tone.Time("4n").toSeconds();
+    engine.bass.triggerAttackRelease(
+      tone.Frequency(bassApproach(current, target), "midi").toFrequency(),
+      beat * 0.9,
+      time,
+      0.7,
+    );
+  }, []);
+
   const stop = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -339,6 +369,7 @@ export function useSession(): Session {
         prepared: new Map(),
         selected: null,
         requestToken: 0,
+        lastRequest: null,
       };
       engine.rideNoise.chain(engine.ride, engine.rideFilter);
       engine.rideNoise.volume.value = -10;
@@ -352,6 +383,9 @@ export function useSession(): Session {
       if (engineRef.current !== engine) return;
 
       setLog([]);
+      // 画面の処理が一瞬止まっても、コードや候補の表示の更新を捨てない。
+      // 既定（0.25秒）のままだと、遅れた小節の表示が飛んで、古い候補が画面に残る
+      tone.getDraw().expiration = 2;
       const previous = { pitch: SOLO_START_PITCH, memo: {} as SoloMemo };
       const transport = tone.getTransport();
       transport.bpm.value = settingsRef.current.bpm;
@@ -368,19 +402,38 @@ export function useSession(): Session {
         "1m",
         0,
       );
+      transport.scheduleRepeat(
+        (time) => {
+          try {
+            onLastBeat(engine, time);
+          } catch (cause) {
+            console.error("ベースの予約に失敗しました", cause);
+          }
+        },
+        "1m",
+        "0:3:0",
+      );
       transport.start("+0.1");
       setStatus("playing");
     } catch (cause) {
       stop();
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, [onBar, prepare, stop]);
+  }, [onBar, onLastBeat, prepare, stop]);
 
   const choose = useCallback((candidate: string) => {
     const engine = engineRef.current;
     if (!engine) return;
     engine.selected = candidate;
     setSelected(candidate);
+    // 押した手応えとして、選んだコードを高い音域で短く鳴らす
+    const { tone } = engine;
+    engine.comp.triggerAttackRelease(
+      compVoicing(candidate).map((pitch) => tone.Frequency(pitch + 12, "midi").toFrequency()),
+      0.35,
+      tone.now(),
+      0.3,
+    );
   }, []);
 
   const updateSettings = useCallback((patch: Partial<SessionSettings>) => {
@@ -395,6 +448,15 @@ export function useSession(): Session {
       engine.soloVolume.volume.value = settings.soloDb;
     }
   }, [settings.bpm, settings.soloDb]);
+
+  // 盛り上がりを動かしたら、次の小節のソロを作り直す。つまみの効きを1小節早めるため
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine?.lastRequest && engine.bar > 0) {
+      const { chords, previousPitch, memo } = engine.lastRequest;
+      void prepare(engine, chords, previousPitch, memo, true);
+    }
+  }, [settings.energy, prepare]);
 
   // 画面を離れるときに音を止める
   useEffect(() => stop, [stop]);

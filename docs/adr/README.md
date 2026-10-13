@@ -11,9 +11,11 @@
 | [0005](0005-jev-spike-first-measurement.md) | Jevの初回実測: 速度は十分、リズムが課題 | 検証結果 | Accepted | 2026-10-13 |
 | [0006](0006-speculative-solos-for-all-candidates.md) | 次に選べるコードすべての分のソロを、選ばれる前に作っておく | 設計判断 | Accepted | 2026-10-13 |
 | [0007](0007-scale-choice-follows-song-tonality.md) | ソロの候補音は、コードの種類だけでなく曲のキーからも決める | 苦労と解決 | Accepted | 2026-10-13 |
-| [0008](0008-solo-from-half-bar-cells.md) | ソロは1音ずつではなく、半小節の「型」から選ばせる | 設計判断 | Accepted | 2026-10-13 |
+| [0008](0008-solo-from-half-bar-cells.md) | ソロは1音ずつではなく、半小節の「型」から選ばせる | 設計判断 | Superseded by 0014 | 2026-10-13 |
 | [0009](0009-recorded-samples-for-instruments.md) | 楽器の音は合成音をやめ、公開されている録音音源を使う | 技術選定 | Accepted | 2026-10-13 |
 | [0010](0010-progression-from-known-fragments.md) | コード候補は、定番進行の断片と履歴の照合で出す | 設計判断 | Accepted | 2026-10-13 |
 | [0011](0011-cells-implemented-and-batched.md) | 型の方式を実装し、全候補の質問を1回のリクエストにまとめた | 検証結果 | Accepted | 2026-10-13 |
 | [0012](0012-rule-based-accompaniment.md) | 伴奏はルールで動かし、Jevは使わない | 設計判断 | Accepted | 2026-10-13 |
 | [0013](0013-white-ui-with-reactive-particles.md) | 画面を白基調に作り直し、音に反応する粒子の背景を置く | 工夫 | Accepted | 2026-10-13 |
+| [0014](0014-rhythm-and-contour-chosen-separately.md) | ソロは「リズム」と「音の動き」を別々に選ばせて組み合わせる | 設計判断 | Accepted | 2026-10-13 |
+| [0015](0015-energy-dial-and-instant-feedback.md) | 盛り上がりのつまみと、押した瞬間の音で「操っている感」を出す | 設計判断 | Accepted | 2026-10-13 |
