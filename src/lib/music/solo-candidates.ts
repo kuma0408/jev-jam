@@ -7,7 +7,12 @@ export type SoloCandidate = {
   kind: "chord-tone" | "tension";
   /** Jevに渡す説明。Jevは英語が得意で計数が苦手なので、響きの意味を英語で書く */
   description: string;
+  /** コードの音とぶつかるので、短い経過音としてしか使えない音か。伸ばす音やコードの押さえ方には使わない */
+  avoid: boolean;
 };
+
+/** ぶつかる音の説明文に共通して入れている言い回し */
+const AVOID_PHRASE = "use only as a quick passing note";
 
 type Step = { semitones: number; degree: string; description: string };
 
@@ -106,5 +111,6 @@ export function soloCandidates(symbol: string, keyRoot = 0): SoloCandidate[] {
     degree: step.degree,
     kind,
     description: step.description,
+    avoid: step.description.includes(AVOID_PHRASE),
   }));
 }

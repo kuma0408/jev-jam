@@ -5,12 +5,12 @@ import { soloCandidates } from "../music/solo-candidates.ts";
 
 /**
  * その音を、このコードの上で伸ばしてよいか。
- * コードのスケールに含まれ、かつ響きがぶつかる音（説明文で経過音に限ると書いた音）でなければよい。
+ * コードのスケールに含まれ、かつ響きがぶつかる音でなければよい。
  */
 export function fitsChord(pitch: number, chord: string): boolean {
   const pitchClass = ((pitch % 12) + 12) % 12;
   const candidate = soloCandidates(chord).find((note) => pitchClassOf(note.note) === pitchClass);
-  return candidate !== undefined && !/passing/.test(candidate.description);
+  return candidate !== undefined && !candidate.avoid;
 }
 
 /** 近い順に試す、音を動かす幅（半音）。同じ近さなら下へ動かすほうを先に試す */

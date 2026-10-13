@@ -1,6 +1,7 @@
 // ソロの後ろで鳴る伴奏（ベース、コード、シンバル）の1小節ぶんを作る。ルールだけで決め、Jevは使わない。
 import { bassPitch } from "../audio/instruments.ts";
 import { chordTones, parseChord, pitchClassOf } from "../music/chord.ts";
+import { soloCandidates } from "../music/solo-candidates.ts";
 import type { Energy } from "../solo/energy.ts";
 
 export type BandPart = "bass" | "comp" | "ride";
@@ -81,6 +82,42 @@ export const COMP_PATTERNS: readonly CompPattern[] = [
       { at: 3.5, dur: 0.5, velocity: 0.55 },
     ],
   },
+  // 1拍待って、2拍目から伸ばす
+  { energies: [1, 2], hits: [{ at: 1, dur: 2.5, velocity: 0.4 }] },
+  // 2分音符で2回。押さえ方を変えて動きを付ける
+  {
+    energies: [1, 2, 3],
+    hits: [
+      { at: 0, dur: 1.4, velocity: 0.4 },
+      { at: 2, dur: 1.6, velocity: 0.42 },
+    ],
+  },
+  // 頭を短く突いて、3拍目の裏から伸ばす
+  {
+    energies: [2, 3],
+    hits: [
+      { at: 0, dur: 0.4, velocity: 0.45 },
+      { at: 2.5, dur: 1.2, velocity: 0.45 },
+    ],
+  },
+  // 2拍目の裏と4拍目
+  {
+    energies: [2, 3],
+    hits: [
+      { at: 1.5, dur: 1, velocity: 0.45 },
+      { at: 3, dur: 0.8, velocity: 0.4 },
+    ],
+  },
+  // 表と裏を取り混ぜて細かく刻む
+  {
+    energies: [3, 4],
+    hits: [
+      { at: 0, dur: 0.5, velocity: 0.5 },
+      { at: 1, dur: 0.4, velocity: 0.4 },
+      { at: 2.5, dur: 0.5, velocity: 0.5 },
+      { at: 3.5, dur: 0.5, velocity: 0.5 },
+    ],
+  },
 ];
 
 const DEFAULT_ENERGY: Energy = 2;
@@ -133,14 +170,50 @@ function bass(chord: string, options: AccompanimentOptions, energy: Energy): Ban
   }));
 }
 
-/** ルートを省いた構成音を、エレピの中音域に並べる（ルートはベースに任せる） */
+const COMP_HIGH = 72;
+
+/** ピッチクラスの並びを、中音域の低いほうから順に積み上げる */
+function stack(pitchClasses: readonly number[]): number[] {
+  const pitches: number[] = [];
+  for (const pitchClass of pitchClasses) {
+    const floor = pitches.length === 0 ? COMP_LOW : pitches.at(-1)! + 1;
+    pitches.push(floor + ((pitchClass - (floor % 12) + 12) % 12));
+  }
+  // 高くなりすぎたら、全体を1オクターブ下げる
+  return pitches.at(-1)! > COMP_HIGH ? pitches.map((pitch) => pitch - 12) : pitches;
+}
+
+/**
+ * コードの押さえ方の一覧。どれもルートを省く（ルートはベースに任せる）。
+ * 先頭は 3rd・5th・7th の基本形。続いて転回、9th や 13th を入れた色のある形、3rd と 7th だけの形。
+ * 9th や 13th は、そのコードの上でぶつからない音のときだけ使う。
+ */
+export function compVoicings(chord: string): number[][] {
+  // 候補音は ルート・9th・3rd・11th・5th・13th・7th の順に並んでいる
+  const [, ninth, third, , fifth, thirteenth, seventh] = soloCandidates(chord).map((candidate) => ({
+    pitchClass: pitchClassOf(candidate.note),
+    usable: !candidate.avoid,
+  }));
+  const [t, f, s] = [third!.pitchClass, fifth!.pitchClass, seventh!.pitchClass];
+  const shapes: number[][] = [
+    [t, f, s],
+    [s, t, f],
+    [f, s, t],
+    [t, s],
+  ];
+  if (ninth!.usable) {
+    const n = ninth!.pitchClass;
+    shapes.push([t, s, n], [s, n, t, f], [t, f, s, n]);
+  }
+  if (thirteenth!.usable) {
+    shapes.push([s, t, thirteenth!.pitchClass]);
+  }
+  return shapes.map(stack);
+}
+
+/** 基本の押さえ方（3rd・5th・7th）。ユーザーが自分でコードを刻むときに鳴らす */
 export function compVoicing(chord: string): number[] {
-  return chordTones(chord)
-    .slice(1)
-    .map((note) => {
-      const pitchClass = pitchClassOf(note);
-      return COMP_LOW + ((pitchClass - (COMP_LOW % 12) + 12) % 12);
-    });
+  return compVoicings(chord)[0]!;
 }
 
 /** シンバルレガート（チン・チンチキ）。2拍目と4拍目を強く、4小節ごとに刻みを足して区切る */
@@ -171,7 +244,7 @@ function ride(bar: number, energy: Energy): BandEvent[] {
 /**
  * 1小節ぶんの伴奏を返す。
  *
- * @param random コード伴奏のリズムの型を選ぶ乱数（0以上1未満）
+ * @param random コード伴奏のリズムの型と、1打ごとの押さえ方を選ぶ乱数（0以上1未満）
  */
 export function accompaniment(
   chord: string,
@@ -181,12 +254,13 @@ export function accompaniment(
   const energy = options.energy ?? DEFAULT_ENERGY;
   const patterns = COMP_PATTERNS.filter((pattern) => pattern.energies.includes(energy));
   const pattern = patterns[Math.min(patterns.length - 1, Math.floor(random() * patterns.length))]!;
-  const voicing = compVoicing(chord);
+  // 1打ごとに押さえ方を選び直す。同じコードでも、使う音・転回・高さが変わって聞こえる
+  const voicings = compVoicings(chord);
   const comp: BandEvent[] = pattern.hits.map((hit) => ({
     part: "comp",
     startBeats: hit.at,
     durationBeats: hit.dur,
-    pitches: voicing,
+    pitches: voicings[Math.min(voicings.length - 1, Math.floor(random() * voicings.length))]!,
     velocity: hit.velocity,
   }));
   return [...bass(chord, options, energy), ...comp, ...ride(options.bar, energy)];

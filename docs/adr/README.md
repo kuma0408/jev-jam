@@ -28,3 +28,4 @@
 | [0022](0022-chord-deadline-and-legato.md) | コード選択に締切を設け、最後の1拍を次のコードへ向かわせる。音の切れ目をなめらかにする | 設計判断 | Accepted | 2026-10-13 |
 | [0023](0023-instant-jam-notes-on-the-piano.md) | 自分で鳴らす音を、押した瞬間に鳴らし、鍵盤に表示する | 苦労と解決 | Accepted | 2026-10-13 |
 | [0024](0024-phrase-shape-register-arc-and-contrast.md) | 4小節ごとに「吹く場所」と「高さの流れ」を決め、跳躍と強弱の幅を広げる | 検証結果 | Accepted | 2026-10-13 |
+| [0025](0025-sixteenth-runs-less-silence-richer-comping.md) | 16分音符は走らせ、伸ばしと無音を減らし、伴奏の押さえ方を増やす | 検証結果 | Accepted | 2026-10-13 |
