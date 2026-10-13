@@ -5,16 +5,10 @@ import { renderCells } from "./render-cells.ts";
 const range = { low: 53, high: 84 };
 const plain = { dynamics: "medium", shape: "steady" } as const;
 
-const cell = (notes: Cell["notes"], extra: Partial<Cell> = {}): Cell => ({
-  id: "test",
-  description: "test cell for unit tests",
-  density: "eighths",
-  notes,
-  ...extra,
-});
+const cell = (notes: Cell["notes"], extra: Partial<Cell> = {}): Cell => ({ notes, ...extra });
 
 const eighths = (steps: number[]): Cell["notes"] => steps.map((step, i) => ({ at: i * 0.5, dur: 0.5, step }));
-const REST = cell([], { density: "space" });
+const REST = cell([]);
 
 describe("renderCells", () => {
   it("度数で書いた型を、コードに合わせた音の高さに直す", () => {
@@ -125,6 +119,25 @@ describe("renderCells", () => {
       ...plain,
     });
     expect(notes.map((note) => note.swing)).toEqual([false, true]);
+  });
+
+  it("単旋律の楽器なので、次の音が始まったら前の音を切る", () => {
+    // 前半は小節いっぱい伸ばす1音、後半は3拍目から動く
+    const whole = cell([{ at: 0, dur: 4, step: 0 }]);
+    const notes = renderCells([whole, cell(eighths([2]))], "Dm7", { previousPitch: 62, ...range, ...plain });
+    expect(notes[0]!.durationBeats).toBe(2);
+  });
+
+  it("後ろに音が無ければ、伸ばした音は小節の終わりまで続く", () => {
+    const whole = cell([{ at: 0, dur: 4, step: 0 }]);
+    const notes = renderCells([whole, REST], "Dm7", { previousPitch: 62, ...range, ...plain });
+    expect(notes[0]!.durationBeats).toBe(4);
+  });
+
+  it("小節の終わりを超えて伸びる音は、小節の終わりで切る", () => {
+    const late = cell([{ at: 1, dur: 4, step: 0 }]);
+    const notes = renderCells([REST, late], "Dm7", { previousPitch: 62, ...range, ...plain });
+    expect(notes[0]!.startBeats + notes[0]!.durationBeats).toBe(4);
   });
 
   it("休む型だけなら音を返さない", () => {
