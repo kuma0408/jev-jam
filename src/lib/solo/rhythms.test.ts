@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { RHYTHMS, TIE_RHYTHMS, boostSixteenths, favorDownbeat, leadsOut, rhythmById, rhythmsFor, tempoBand } from "./rhythms.ts";
+import {
+  RHYTHMS,
+  TIE_RHYTHMS,
+  boostSixteenths,
+  favorDownbeat,
+  leadsOut,
+  rhythmById,
+  rhythmsFor,
+  tempoBand,
+} from "./rhythms.ts";
 
 describe("tempoBand", () => {
   it("テンポを遅い・中間・速いの3つの帯に分ける", () => {

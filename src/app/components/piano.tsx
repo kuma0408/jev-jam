@@ -42,20 +42,33 @@ export function AdventureMark({ level }: { level: Adventure }) {
   );
 }
 
-type Props = Pick<Session, "candidates" | "nextChord" | "chosenByUser" | "choose" | "subscribe"> & {
+type Props = Pick<Session, "candidates" | "nextChord" | "chosenByUser" | "locked" | "choose" | "subscribe"> & {
   /** いま鳴っているコード。停止中は null */
   currentChord: string | null;
   bpm: number;
   playing: boolean;
 };
 
-export function Piano({ candidates, nextChord, chosenByUser, choose, subscribe, currentChord, bpm, playing }: Props) {
+export function Piano({
+  candidates,
+  nextChord,
+  chosenByUser,
+  locked,
+  choose,
+  subscribe,
+  currentChord,
+  bpm,
+  playing,
+}: Props) {
   const currentRoot = currentChord === null ? null : parseChord(currentChord).root;
 
   return (
-    <div className="piano">
+    // 4拍目に入ると次のコードが確定する。確定後は、進む先だけを残して鍵盤全体を沈める
+    <div className="piano" data-locked={locked}>
       <div className="piano-rail">
-        <span className="piano-rail-label">この小節のうちに選ぶ</span>
+        <span className="piano-rail-label" aria-live="off">
+          {locked && nextChord ? `つぎは ${nextChord}` : "3拍目のうちに選ぶ"}
+        </span>
         <BarTimer subscribe={subscribe} bpm={bpm} active={playing} />
       </div>
       <div className="piano-keys">
@@ -87,6 +100,8 @@ export function Piano({ candidates, nextChord, chosenByUser, choose, subscribe, 
                       data-adventure={candidate.adventure}
                       data-state={state}
                       aria-pressed={isNext}
+                      // 確定後は選び直せない。進む先のコードは、読み上げで分かるよう押せる見た目のまま残す
+                      disabled={locked && !isNext}
                       aria-label={`${candidate.chord}、${ADVENTURE_LABELS[candidate.adventure]}${index === 0 ? "、既定" : ""}、${candidate.reason}`}
                       aria-keyshortcuts={String(index + 1)}
                       title={candidate.reason}

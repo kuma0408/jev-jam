@@ -24,8 +24,12 @@ export type VoiceNote = {
 
 /** 鳴らし続けている音。releaseAt を呼ぶまで切れない */
 export type HeldNote = {
-  /** 指定した時刻（オーディオの時刻、秒）に音を切る */
-  releaseAt: (time: number) => void;
+  /**
+   * 指定した時刻（オーディオの時刻、秒）から音を消し始める。
+   *
+   * @param fadeSeconds 消えるまでの長さ。長くすると余韻を残して自然に消える
+   */
+  releaseAt: (time: number, fadeSeconds?: number) => void;
 };
 
 export type ExpressiveVoice = {
@@ -36,7 +40,10 @@ export type ExpressiveVoice = {
   dispose: () => void;
 };
 
-const RELEASE_SECONDS = 0.07;
+/** 音の消え際の長さ。短い音はすぐ切り、長い音は少し余韻を残す */
+const MIN_FADE_SECONDS = 0.05;
+const MAX_FADE_SECONDS = 0.14;
+const FADE_RATIO = 0.2;
 
 function semitoneRatio(semitones: number): number {
   return 2 ** (semitones / 12);
@@ -87,9 +94,11 @@ export function createExpressiveVoice(
         note.time,
         note.duration,
       );
-      const releaseAt = (time: number) => {
-        gain.gain.setTargetAtTime(0, time, RELEASE_SECONDS / 3);
-        source.stop(time + RELEASE_SECONDS * 2);
+      const naturalFade = Math.min(MAX_FADE_SECONDS, Math.max(MIN_FADE_SECONDS, note.duration * FADE_RATIO));
+      const releaseAt = (time: number, fadeSeconds = naturalFade) => {
+        // setTargetAtTime は時定数の3倍でほぼ0になる
+        gain.gain.setTargetAtTime(0, time, fadeSeconds / 3);
+        source.stop(time + fadeSeconds * 2);
       };
 
       source.onended = () => {

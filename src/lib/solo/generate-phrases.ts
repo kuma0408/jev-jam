@@ -1,7 +1,6 @@
 import type { DecisionClient } from "../jev/client.ts";
-import { pitchClassOf } from "../music/chord.ts";
 import { sampleFromDistribution } from "../music/sample.ts";
-import { soloCandidates } from "../music/solo-candidates.ts";
+import { aimPitch, fitsChord } from "./aim.ts";
 import type { SoloBar, SoloMemo } from "./api.ts";
 import type { Cell } from "./cells.ts";
 import { CONTOURS, type Contour, contourById } from "./contours.ts";
@@ -35,6 +34,11 @@ export type PhraseBarsInput = {
   barInPhrase?: number;
   /** 直前の小節の最後の音（previousPitch）が、小節の終わりまで鳴り続けているか */
   sustained?: boolean;
+  /**
+   * 直前の小節の最後の音が、コード選択の締切より後に鳴り始める音か。
+   * そうなら、次のコードが決まってから鳴らすので、次のコードに合う音へ寄せられる
+   */
+  retargetable?: boolean;
 };
 
 /** 前のフレーズとの関係。人のアドリブで「考えて吹いている」ように聞こえる部分を、Jevに選ばせる */
@@ -124,15 +128,6 @@ export function penalizeRecent(probabilities: Record<string, number>, recent: re
 }
 
 const RHYTHM_ENERGY = new Map([...RHYTHMS, ...TIE_RHYTHMS].map((rhythm) => [rhythm.id, rhythm.energy]));
-
-/**
- * 鳴っている音を、このコードの上でそのまま伸ばしてよいか。
- * コードのスケールに含まれ、かつ響きがぶつかる音（説明文で経過音に限ると書いた音）でなければよい。
- */
-function fitsChord(pitch: number, chord: string): boolean {
-  const candidate = soloCandidates(chord).find((note) => pitchClassOf(note.note) === ((pitch % 12) + 12) % 12);
-  return candidate !== undefined && !/passing/.test(candidate.description);
-}
 
 /**
  * リズムの確率を、盛り上がりのつまみに近い音数のものへ寄せる。
@@ -246,11 +241,19 @@ export async function generatePhraseBars(
   // 前の小節が次へつなぐ形で終わっていたら、この小節は頭から鳴らして受け止める
   const previousEnding = [...RHYTHMS, ...TIE_RHYTHMS].find((rhythm) => rhythm.id === recent[2]);
   const mustLand = previousEnding !== undefined && leadsOut(previousEnding);
+  /**
+   * このコードへ進んだ場合に、直前の小節の最後に鳴っている音の高さ。
+   * 締切より後に鳴り始める音なら、画面側がこのコードに合う音へ寄せて鳴らすので、同じ計算をする
+   */
+  const currentChord = history.at(-1)?.chord;
+  const heldPitch = (chord: string): number =>
+    input.retargetable && currentChord ? aimPitch(input.previousPitch, currentChord, chord) : input.previousPitch;
+
   /** このコードの上で、小節の前半に選べるリズム */
   const firstHalfRhythms = (chord: string): Rhythm[] => [
     ...(mustLand ? rhythms.filter((rhythm) => rhythm.hits[0]?.at === 0) : rhythms),
     // 鳴っている音がこのコードに合うときだけ、持ち越して伸ばす選択肢を出す。合わなければ小節の終わりで切れる
-    ...(input.sustained && fitsChord(input.previousPitch, chord) ? TIE_RHYTHMS : []),
+    ...(input.sustained && fitsChord(heldPitch(chord), chord) ? TIE_RHYTHMS : []),
   ];
   const pickContour = (probabilities: Record<string, number>, used: readonly string[]) =>
     contourById(sampleFromDistribution(penalizeRecent(probabilities, used), random));
@@ -306,13 +309,16 @@ export async function generatePhraseBars(
     const canKeepRhythm = motifRhythm !== undefined && !(mustLand && motifRhythm.hits[0]?.at !== 0);
     const keepRhythm = canKeepRhythm && (relation === "develop-rhythm" || relation === "echo");
     const keepContour = relation === "develop-melody" || relation === "echo";
-    const rhythm =
-      keepRhythm && motifRhythm
+    // Jevが持ち越しを選んだら、前との関係より優先する。音をつなぐ意図のほうが強い選択だから
+    const sampled = pickRhythm(favorDownbeat(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds), used);
+    const rhythm = sampled.hits[0]?.tie
+      ? sampled
+      : keepRhythm && motifRhythm
         ? motifRhythm
         : relation === "space"
-          ? pickRhythm(rhythmOdds, used, 1)
-          : // 間で応えるとき以外は、小節の頭から鳴るリズムを選ばれやすくする
-            pickRhythm(favorDownbeat(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds), used);
+          ? // 間で応えるときは、頭から鳴るリズムへの優遇を掛けず、音数の少ないリズムに寄せる
+            pickRhythm(rhythmOdds, used, 1)
+          : sampled;
     const contour =
       keepContour && motifContour
         ? motifContour
@@ -364,7 +370,7 @@ export async function generatePhraseBars(
     const notes = renderCells(
       [compose(firstHalf.rhythm, firstHalf.contour), compose(secondHalf.rhythm, secondHalf.contour)],
       chord,
-      { previousPitch: input.previousPitch, ...input.range, dynamics, shape },
+      { previousPitch: heldPitch(chord), ...input.range, dynamics, shape },
     );
     const cells = [firstHalf.rhythm.id, firstHalf.contour.id, secondHalf.rhythm.id, secondHalf.contour.id];
     return {
@@ -378,7 +384,7 @@ export async function generatePhraseBars(
       ].join(" / "),
       latencyMs,
       calls: 2,
-      lastPitch: notes.at(-1)?.pitch ?? input.previousPitch,
+      lastPitch: notes.at(-1)?.pitch ?? heldPitch(chord),
       memo: {
         cells,
         dynamics,

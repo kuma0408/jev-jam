@@ -137,6 +137,7 @@ export default function Page() {
             candidates={candidates}
             nextChord={nextChord}
             chosenByUser={session.chosenByUser}
+            locked={session.locked}
             choose={choose}
             subscribe={session.subscribe}
             currentChord={session.chord}
@@ -160,7 +161,7 @@ export default function Page() {
             </ul>
             <p className="hint">
               {playing
-                ? "次に進めるコードが鍵の上に出ます。数字キーでも選べます。選ばなければ「自動」の印のコードへ進みます。"
+                ? "次に進めるコードが鍵の上に出ます。数字キーでも選べます。3拍目のうちに選ばなければ「自動」の印のコードへ進みます。"
                 : "開始すると、次に進めるコードが鍵の上に出ます。"}
             </p>
           </div>

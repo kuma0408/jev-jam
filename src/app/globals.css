@@ -738,6 +738,41 @@ input {
   color: var(--ink-soft);
 }
 
+/* ---- 次のコードが確定した後の鍵盤 ---- */
+
+/* 4拍目に入ると選び直せない。選ばれなかった候補と鍵を沈め、進む先だけを浮かび上がらせる */
+.piano-note,
+.chip {
+  transition:
+    opacity 140ms ease-out,
+    filter 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+
+.piano[data-locked="true"] .piano-note:not([data-next]) {
+  filter: grayscale(1) brightness(0.86);
+}
+
+.piano[data-locked="true"] .chip:not([aria-pressed="true"]) {
+  opacity: 0.22;
+  filter: grayscale(1);
+  cursor: default;
+}
+
+.piano[data-locked="true"] .chip[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 3px var(--paper),
+    0 0 0 6px var(--ink);
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .piano-note,
+  .chip {
+    transition: none;
+  }
+}
+
 /* ---- 自分でも弾く ---- */
 
 .jam {
