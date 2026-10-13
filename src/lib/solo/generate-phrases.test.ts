@@ -127,6 +127,7 @@ describe("generatePhraseBars", () => {
       cells,
       dynamics: "loud",
       history: [{ chord: "Dm7", cells }],
+      intensity: "crescendo",
       shape: "p-build",
       arc: "a-middle",
     });
@@ -392,15 +393,16 @@ describe("generatePhraseBars（4小節の形と高さの流れ）", () => {
     expect(bar!.notes.length).toBeGreaterThan(0);
   });
 
-  it("次が休みの場所の直前では、次へつなぐ形で終わるリズムを選択肢に出さない", async () => {
-    // p-taper（xx x. x. ..）の2小節目: 後半は休み。前半は「吹く」で、その次が休み
-    const { client, calls } = scriptedClient(picks);
-    await generatePhraseBars(client, { ...input, barInPhrase: 2, memo: { shape: "p-long-line", arc: "a-middle" } });
-    // p-long-line（xx xx x. ..）の3小節目: 前半は吹き、後半は休み。後半の質問は、休みに決まっているので何でもよい
-    const offered = Object.keys(calls[0]!.questions.rhythm_first_0!.criteria);
-    expect(offered).not.toContain("r-pickup-two");
-    expect(offered).not.toContain("r-four-eighths");
-    expect(offered).toContain("r-half");
+  it("形が「休む」としている場所では、前の小節が次へつなぐ形で終わっていても休む（形が決めたフレーズの終わりを守る）", async () => {
+    const { client } = scriptedClient(picks);
+    // p-long-line（xx xx x. ..）の4小節目は、まるごと休み
+    const leading = { chord: "Cmaj7", cells: ["r-half", "c-arch", "r-pickup-two", "c-rise-from-fifth"] };
+    const [bar] = await generatePhraseBars(client, {
+      ...input,
+      barInPhrase: 3,
+      memo: { shape: "p-long-line", arc: "a-middle", history: [leading] },
+    });
+    expect(bar!.notes).toEqual([]);
   });
 
   it("高さの流れに沿って、小節ごとに音の高さが動く", async () => {
@@ -415,6 +417,29 @@ describe("generatePhraseBars（4小節の形と高さの流れ）", () => {
       return bar!.notes.reduce((sum, note) => sum + note.pitch, 0) / bar!.notes.length;
     };
     expect(await mean(3)).toBeGreaterThan((await mean(0)) + 6);
+  });
+
+  it("新しいまとまりに入るとき、直前までの形と流れを覚えておく（同じものの繰り返しを避けるため）", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, {
+      ...input,
+      barInPhrase: 0,
+      memo: { shape: "p-taper", arc: "a-peak", pastShapes: ["p-long-line", "p-scattered", "p-bookends"], pastArcs: ["a-low"] },
+    });
+    // 直前のものを先頭に足し、3つまで覚える
+    expect(bar!.memo.pastShapes).toEqual(["p-taper", "p-long-line", "p-scattered"]);
+    expect(bar!.memo.pastArcs).toEqual(["a-peak", "a-low"]);
+  });
+
+  it("まとまりの途中では、覚えている形と流れをそのまま引き継ぐ", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, {
+      ...input,
+      barInPhrase: 2,
+      memo: { ...planned, pastShapes: ["p-taper"], pastArcs: ["a-low"] },
+    });
+    expect(bar!.memo.pastShapes).toEqual(["p-taper"]);
+    expect(bar!.memo.pastArcs).toEqual(["a-low"]);
   });
 
   it("形と流れを、画面用の補足に出す", async () => {
