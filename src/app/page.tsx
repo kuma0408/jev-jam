@@ -6,9 +6,14 @@ import { type ChordCandidate, nextChordCandidates } from "../lib/progression/can
 import type { SoloRequest, SoloResponse } from "../lib/solo/api.ts";
 import type { BarResult, Strategy } from "../lib/solo/generate.ts";
 import { type SlotChoice, toNoteEvents } from "../lib/solo/phrase.ts";
+import { slotOffsetBeats } from "../lib/solo/swing.ts";
 
 const START_CHORD = "Cmaj7";
-const SOLO_RANGE = { low: 60, high: 86 };
+// テナーサックスの音域に寄せる（実音でF3〜F5）
+const SOLO_RANGE = { low: 53, high: 77 };
+const SOLO_START_PITCH = 65;
+// 裏拍を3連符の3つ目に置くスウィング
+const SWING = 2 / 3;
 const LOG_LIMIT = 24;
 const BLACK_KEYS = new Set(["Db", "Eb", "Gb", "Ab", "Bb"]);
 
@@ -25,7 +30,8 @@ type LogEntry = {
 /** 再生中だけ存在する、音源と進行の状態。描画に関係しないのでrefで持つ */
 type Engine = {
   tone: typeof import("tone");
-  solo: import("tone").Synth;
+  solo: import("tone").MonoSynth;
+  vibrato: import("tone").Vibrato;
   comp: import("tone").PolySynth;
   bass: import("tone").Synth;
   hat: import("tone").NoiseSynth;
@@ -65,6 +71,7 @@ export default function Page() {
   const [starting, setStarting] = useState(false);
   const [bpm, setBpm] = useState(90);
   const [strategy, setStrategy] = useState<Strategy>("batch");
+  const [soloDb, setSoloDb] = useState(-12);
   const [chord, setChord] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ChordCandidate[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -76,6 +83,8 @@ export default function Page() {
   // 再生ループから最新の設定を読むためのref
   const settingsRef = useRef({ bpm, strategy });
   settingsRef.current = { bpm, strategy };
+  const soloDbRef = useRef(soloDb);
+  soloDbRef.current = soloDb;
 
   /** 次の小節で選べる候補すべての分のソロを、先に依頼しておく */
   const prepareNext = useCallback((engine: Engine, chords: string[], previousBar: SlotChoice[]) => {
@@ -110,7 +119,6 @@ export default function Page() {
       // 伴奏: ベースがルート、その上に構成音
       const root = parseChord(current).root;
       const beat = tone.Time("4n").toSeconds();
-      const slot = beat / 2;
       engine.bass.triggerAttackRelease(tone.Frequency(36 + root, "midi").toFrequency(), beat * 3.5, time, 0.6);
       engine.comp.triggerAttackRelease(
         chordTones(current).map((note) => tone.Frequency(48 + pitchClassOf(note), "midi").toFrequency()),
@@ -125,10 +133,12 @@ export default function Page() {
       // ソロ
       if (result) {
         for (const event of toNoteEvents(result.choices, { previousPitch: engine.previousPitch, ...SOLO_RANGE })) {
+          const startBeats = slotOffsetBeats(event.startSlot, SWING);
+          const endBeats = slotOffsetBeats(event.startSlot + event.lengthSlots, SWING);
           engine.solo.triggerAttackRelease(
             tone.Frequency(event.pitch, "midi").toFrequency(),
-            event.lengthSlots * slot * 0.9,
-            time + event.startSlot * slot,
+            (endBeats - startBeats) * beat * 0.9,
+            time + startBeats * beat,
             0.8,
           );
           engine.previousPitch = event.pitch;
@@ -165,8 +175,8 @@ export default function Page() {
     transport.stop();
     transport.cancel();
     engine.comp.releaseAll();
-    for (const synth of [engine.solo, engine.comp, engine.bass, engine.hat]) {
-      synth.dispose();
+    for (const node of [engine.solo, engine.vibrato, engine.comp, engine.bass, engine.hat]) {
+      node.dispose();
     }
     setPlaying(false);
     setCandidates([]);
@@ -182,12 +192,17 @@ export default function Page() {
       const tone = await import("tone");
       await tone.start();
 
+      // ソロはリード楽器風の音にする。倍音の多い波形をフィルターで丸め、軽くビブラートをかける
+      const vibrato = new tone.Vibrato(5, 0.06).toDestination();
       const engine: Engine = {
         tone,
-        solo: new tone.Synth({
-          oscillator: { type: "triangle" },
-          envelope: { attack: 0.01, decay: 0.15, sustain: 0.5, release: 0.2 },
-        }).toDestination(),
+        solo: new tone.MonoSynth({
+          oscillator: { type: "sawtooth" },
+          filter: { type: "lowpass", rolloff: -24, Q: 2 },
+          envelope: { attack: 0.04, decay: 0.1, sustain: 0.8, release: 0.12 },
+          filterEnvelope: { attack: 0.06, decay: 0.2, sustain: 0.5, release: 0.3, baseFrequency: 350, octaves: 2.4 },
+        }).connect(vibrato),
+        vibrato,
         comp: new tone.PolySynth(tone.Synth, {
           oscillator: { type: "sine" },
           envelope: { attack: 0.05, decay: 0.3, sustain: 0.6, release: 0.6 },
@@ -201,10 +216,11 @@ export default function Page() {
         chord: START_CHORD,
         prepared: new Map(),
         selected: null,
-        previousPitch: 72,
+        previousPitch: SOLO_START_PITCH,
         requestToken: 0,
       };
       engine.hat.volume.value = -14;
+      engine.solo.volume.value = soloDbRef.current;
       engineRef.current = engine;
 
       // 最初の小節のソロを取ってから始める
@@ -239,6 +255,13 @@ export default function Page() {
       engine.tone.getTransport().bpm.value = bpm;
     }
   }, [bpm]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine) {
+      engine.solo.volume.value = soloDb;
+    }
+  }, [soloDb]);
 
   // 数字キーで候補を選べるようにする
   useEffect(() => {
@@ -277,6 +300,18 @@ export default function Page() {
             onChange={(event) => setBpm(Number(event.target.value))}
           />
           <output>{bpm} BPM</output>
+        </label>
+        <label>
+          ソロの音量
+          <input
+            type="range"
+            min={-30}
+            max={0}
+            step={1}
+            value={soloDb}
+            onChange={(event) => setSoloDb(Number(event.target.value))}
+          />
+          <output>{soloDb} dB</output>
         </label>
         <label>
           Jevへの聞き方
