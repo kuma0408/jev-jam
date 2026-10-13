@@ -1,18 +1,68 @@
 // 画面と中継API（/api/solo）の間でやり取りする型
-import type { BarResult, Strategy } from "./generate.ts";
 import type { SlotChoice } from "./phrase.ts";
+
+/**
+ * Jevへの聞き方。
+ * cells: 半小節の型から選ばせる / batch: 8音を1回で聞く / two-stage: 方針を決めてから8音を聞く
+ */
+export type SoloStrategy = "cells" | "batch" | "two-stage";
+
+export const SOLO_STRATEGIES: readonly SoloStrategy[] = ["cells", "batch", "two-stage"];
+
+/** 1つの音。位置と長さはスウィングをかける前の、楽譜上の拍で表す */
+export type SoloNote = {
+  /** MIDIノート番号 */
+  pitch: number;
+  /** 小節の頭からの拍数 */
+  startBeats: number;
+  durationBeats: number;
+  /** 強さ（0〜1） */
+  velocity: number;
+  /** スウィングをかけるか。3連符のように位置が決まっている音は false */
+  swing: boolean;
+};
+
+/** 次の小節を依頼するときに送り返す、直前の小節の記録 */
+export type SoloMemo = {
+  /** 型の方式: 使った型のID */
+  cells?: string[];
+  /** 型の方式: 強弱 */
+  dynamics?: string;
+  /** 1音ずつの方式: スロットごとの選択 */
+  choices?: SlotChoice[];
+};
+
+/** 1小節ぶんのソロ */
+export type SoloBar = {
+  chord: string;
+  notes: SoloNote[];
+  /** 画面に出す、選ばれた内容の要約 */
+  summary: string;
+  /** 画面に出す、確率や方針などの補足 */
+  details: string;
+  /** Jevの呼び出しにかかった合計時間 */
+  latencyMs: number;
+  calls: number;
+  /** この小節の最後の音の高さ。音が無ければ直前の音の高さ */
+  lastPitch: number;
+  memo: SoloMemo;
+};
 
 export type SoloRequest = {
   /** ソロを用意したいコード。次に選べる候補すべてを一度に渡す */
   chords: string[];
-  strategy: Strategy;
+  strategy: SoloStrategy;
   bpm: number;
-  previousBar: SlotChoice[];
+  /** 直前に鳴っていた音の高さ */
+  previousPitch: number;
+  /** ソロの楽器の音域（MIDIノート番号） */
+  range: { low: number; high: number };
+  memo: SoloMemo;
 };
 
 export type SoloResponse = {
   /** jev か mock */
   client: string;
   /** コードごとの結果。失敗したコードは null */
-  results: Record<string, BarResult | null>;
+  results: Record<string, SoloBar | null>;
 };

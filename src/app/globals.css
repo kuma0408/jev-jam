@@ -146,14 +146,26 @@ input {
   align-self: start;
 }
 
-.key:disabled {
+.key[data-empty="true"] {
   opacity: 0.35;
-  cursor: not-allowed;
 }
 
-.key[aria-pressed="true"] {
+.key-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 4px 0;
+  background: transparent;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.key-option[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent);
 }
 
 .key .chord {

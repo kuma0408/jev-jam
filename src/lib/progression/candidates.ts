@@ -88,7 +88,8 @@ const TRANSITIONS: Record<string, Transition[]> = {
 
 export const KNOWN_CHORDS: readonly string[] = Object.keys(TRANSITIONS);
 
-export function nextChordCandidates(current: string): ChordCandidate[] {
+export function nextChordCandidates(history: readonly string[]): ChordCandidate[] {
+  const current = history.at(-1) ?? "";
   const transitions = TRANSITIONS[current];
   if (!transitions) {
     throw new Error(`進行のルールに無いコードです: ${current}`);

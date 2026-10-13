@@ -4,22 +4,22 @@ import { KNOWN_CHORDS, nextChordCandidates } from "./candidates.ts";
 
 describe("nextChordCandidates", () => {
   it("最も自然な進行を先頭に返す", () => {
-    expect(nextChordCandidates("Dm7")[0]).toMatchObject({ chord: "G7", adventure: 1 });
-    expect(nextChordCandidates("G7")[0]).toMatchObject({ chord: "Cmaj7", adventure: 1 });
+    expect(nextChordCandidates(["Dm7"])[0]).toMatchObject({ chord: "G7", adventure: 1 });
+    expect(nextChordCandidates(["G7"])[0]).toMatchObject({ chord: "Cmaj7", adventure: 1 });
   });
 
   it("冒険度の高い候補も含める", () => {
-    const candidates = nextChordCandidates("Dm7");
+    const candidates = nextChordCandidates(["Dm7"]);
     // 裏コード
     expect(candidates).toContainEqual(expect.objectContaining({ chord: "Db7", adventure: 2 }));
   });
 
   it("未対応のコードはエラーにする", () => {
-    expect(() => nextChordCandidates("Xyz")).toThrow();
+    expect(() => nextChordCandidates(["Xyz"])).toThrow();
   });
 
   describe.each(KNOWN_CHORDS)("%s から", (chord) => {
-    const candidates = nextChordCandidates(chord);
+    const candidates = nextChordCandidates([chord]);
 
     it("候補が1つ以上ある", () => {
       expect(candidates.length).toBeGreaterThan(0);
