@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTOURS, contourById } from "./contours.ts";
+import { CONTOURS, contourById, favorLeaps } from "./contours.ts";
 
 const stepsOf = (id: string, count: number) => contourById(id).notes(count).map((note) => note.step);
 
@@ -73,5 +73,65 @@ describe("CONTOURS（音の動きの一覧）", () => {
 
   it("無いIDはエラーにする", () => {
     expect(() => contourById("c-no-such")).toThrow();
+  });
+});
+
+describe("跳躍のある動き", () => {
+  /** 8音ぶんの、隣り合う音の段差の平均 */
+  const averageLeap = (id: string) => {
+    const steps = contourById(id).notes(8).map((note) => note.step);
+    return steps.slice(1).reduce((sum, step, i) => sum + Math.abs(step - steps[i]!), 0) / 7;
+  };
+
+  it("どの動きにも、隣の音へ動くだけか、跳躍を含むかの印が付いている", () => {
+    for (const contour of CONTOURS) {
+      expect(["step", "mixed", "leap"]).toContain(contour.motion);
+    }
+  });
+
+  it("跳躍の動きが十分にあり、実際に大きく跳ぶ", () => {
+    const leaps = CONTOURS.filter((contour) => contour.motion === "leap");
+    expect(leaps.length).toBeGreaterThanOrEqual(8);
+    for (const contour of leaps) {
+      expect(averageLeap(contour.id)).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("隣の音へ動くだけの動きは、実際に段差が小さい", () => {
+    for (const contour of CONTOURS.filter((contour) => contour.motion === "step")) {
+      expect(averageLeap(contour.id)).toBeLessThan(1.5);
+    }
+  });
+
+  it("3rd・7th・9thから始まる動きが、ルートや5thから始まる動きより多い", () => {
+    const firsts = CONTOURS.map((contour) => ((contour.notes(4)[0]!.step % 7) + 7) % 7);
+    const rootOrFifth = firsts.filter((step) => step === 0 || step === 4).length;
+    const color = firsts.filter((step) => step === 2 || step === 6 || step === 1).length;
+    expect(color).toBeGreaterThan(rootOrFifth);
+  });
+});
+
+describe("favorLeaps（跳躍のある動きを選ばれやすくする）", () => {
+  const uniform = Object.fromEntries(CONTOURS.map((contour) => [contour.id, 1]));
+  const shareOf = (odds: Record<string, number>, motion: string) => {
+    const total = Object.values(odds).reduce((sum, value) => sum + value, 0);
+    return CONTOURS.filter((contour) => contour.motion === motion).reduce((sum, contour) => sum + odds[contour.id]!, 0) / total;
+  };
+
+  it("跳躍の取り分を増やし、隣の音へ動くだけの動きの取り分を減らす", () => {
+    const adjusted = favorLeaps(uniform);
+    expect(shareOf(adjusted, "leap")).toBeGreaterThan(shareOf(uniform, "leap"));
+    expect(shareOf(adjusted, "step")).toBeLessThan(shareOf(uniform, "step"));
+  });
+
+  it("ルートや5thから始まる動きは、選ばれにくくする", () => {
+    const adjusted = favorLeaps({ "c-rise-from-root": 1, "c-rise-from-third": 1 });
+    expect(adjusted["c-rise-from-root"]).toBeLessThan(adjusted["c-rise-from-third"]!);
+  });
+
+  it("どの動きの確率も0にはしない", () => {
+    for (const value of Object.values(favorLeaps(uniform))) {
+      expect(value).toBeGreaterThan(0);
+    }
   });
 });

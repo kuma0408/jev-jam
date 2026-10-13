@@ -153,6 +153,40 @@ describe("renderCells", () => {
     expect(notes[1]!.tie).toBeUndefined();
   });
 
+  it("高さの目標があれば、直前の音よりそちらへ寄った高さから始める", () => {
+    const options = { previousPitch: 62, ...range, ...plain };
+    const plainStart = renderCells([cell(eighths([0])), REST], "Dm7", options)[0]!.pitch;
+    const aimedHigh = renderCells([cell(eighths([0])), REST], "Dm7", { ...options, targetPitch: 80 })[0]!.pitch;
+    const aimedLow = renderCells([cell(eighths([0])), REST], "Dm7", { ...options, previousPitch: 74, targetPitch: 55 })[0]!.pitch;
+    expect(plainStart).toBe(62);
+    expect(aimedHigh).toBe(74);
+    expect(aimedLow).toBe(62);
+  });
+
+  it("高さの目標があっても、持ち越しの音の高さは変えない", () => {
+    const tie = cell([{ at: 0, dur: 1, step: 0, tie: true }]);
+    const notes = renderCells([tie, REST], "Dm7", { previousPitch: 64, ...range, ...plain, targetPitch: 80 });
+    expect(notes[0]!.pitch).toBe(64);
+  });
+
+  it("弱い指定と強い指定で、強さに2倍以上の差が付く（強弱の幅を広く取る）", () => {
+    const options = { previousPitch: 62, ...range, shape: "steady" } as const;
+    const soft = renderCells([cell(eighths([0])), REST], "Dm7", { ...options, dynamics: "soft" })[0]!.velocity;
+    const loud = renderCells([cell(eighths([0])), REST], "Dm7", { ...options, dynamics: "loud" })[0]!.velocity;
+    expect(loud / soft).toBeGreaterThanOrEqual(2);
+  });
+
+  it("「前半は強く後半は弱く」「山なり」の強弱の動きを付けられる", () => {
+    const line = [cell(eighths([0, 0, 0, 0])), cell(eighths([0, 0, 0, 0]))] as const;
+    const options = { previousPitch: 62, ...range, dynamics: "medium" } as const;
+    const terraced = renderCells(line, "Dm7", { ...options, shape: "terraced" });
+    const surge = renderCells(line, "Dm7", { ...options, shape: "surge" });
+    // 表拍どうしで比べる（0拍目・2拍目・3拍目）
+    expect(terraced[0]!.velocity).toBeGreaterThan(terraced[4]!.velocity * 1.4);
+    expect(surge[4]!.velocity).toBeGreaterThan(surge[0]!.velocity);
+    expect(surge[4]!.velocity).toBeGreaterThan(surge[6]!.velocity);
+  });
+
   it("休む型だけなら音を返さない", () => {
     expect(renderCells([REST, REST], "Dm7", { previousPitch: 62, ...range, ...plain })).toEqual([]);
   });
