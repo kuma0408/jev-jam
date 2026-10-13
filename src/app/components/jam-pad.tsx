@@ -1,7 +1,7 @@
 "use client";
 
 // 自分で音を出して参加するための操作。伴奏を刻むボタンを置く。
-// 鍵盤の音を1つずつ弾くキー（A W S E D F T G Y H U J）は、鍵盤の上に表示している（piano.tsx）。
+// 旋律を弾く鍵盤は別にある（melody-pads.tsx と piano.tsx）。
 import type { Touch } from "../../lib/solo/energy.ts";
 
 const TOUCH_LABELS: Record<Touch, string> = {
@@ -21,10 +21,10 @@ export function JamPad({ playing, touch, onTap }: Props) {
   return (
     <section className="jam" aria-labelledby="jam-heading">
       <h2 id="jam-heading" className="jam-heading">
-        自分でも弾く
+        コードを刻む
         <span className="jam-status" role="status">
           {playing
-            ? `${TOUCH_LABELS[touch]}（鍵盤の音は、鍵に書いてあるキーで弾けます）`
+            ? TOUCH_LABELS[touch]
             : "開始すると、いまのコードを自分で鳴らせます"}
         </span>
       </h2>

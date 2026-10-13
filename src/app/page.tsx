@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BarLogPanel } from "./components/bar-log.tsx";
 import { isEnergy } from "../lib/solo/energy.ts";
 import { ControlDock } from "./components/control-dock.tsx";
 import { EnergyDial } from "./components/energy-dial.tsx";
 import { JamPad } from "./components/jam-pad.tsx";
+import { MelodyPads, PAD_KEY_CODES } from "./components/melody-pads.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
 import { PianoRoll } from "./components/piano-roll.tsx";
@@ -18,7 +19,9 @@ export default function Page() {
   const playing = status === "playing";
 
   const { energy } = session.settings;
-  const { updateSettings, tap, noteOn, noteOff, releaseChord } = session;
+  const { updateSettings, tap, noteOn, noteOff, padOn, padOff, releaseChord } = session;
+  // 旋律を弾く鍵盤。easy は合う音だけの8鍵、piano は12音すべて
+  const [keyboard, setKeyboard] = useState<"easy" | "piano">("easy");
 
   // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
   useEffect(() => {
@@ -37,11 +40,20 @@ export default function Page() {
           return;
         }
         // 鍵盤の音。押している間だけ鳴る
-        const pitchClass = NOTE_KEY_CODES.indexOf(code as (typeof NOTE_KEY_CODES)[number]);
-        if (pitchClass >= 0) {
-          noteOn(pitchClass);
-          event.preventDefault();
-          return;
+        if (keyboard === "easy") {
+          const slot = PAD_KEY_CODES.indexOf(code as (typeof PAD_KEY_CODES)[number]);
+          if (slot >= 0) {
+            padOn(slot);
+            event.preventDefault();
+            return;
+          }
+        } else {
+          const pitchClass = NOTE_KEY_CODES.indexOf(code as (typeof NOTE_KEY_CODES)[number]);
+          if (pitchClass >= 0) {
+            noteOn(pitchClass);
+            event.preventDefault();
+            return;
+          }
         }
       }
       if (playing && !onControl && (code === "ArrowUp" || code === "ArrowDown")) {
@@ -64,6 +76,9 @@ export default function Page() {
       if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) releaseChord();
       const pitchClass = NOTE_KEY_CODES.indexOf(event.code as (typeof NOTE_KEY_CODES)[number]);
       if (pitchClass >= 0) noteOff(pitchClass);
+      // 押している途中で鍵盤を切り替えても鳴りっぱなしにならないよう、どちらの鍵盤の音も止める
+      const slot = PAD_KEY_CODES.indexOf(event.code as (typeof PAD_KEY_CODES)[number]);
+      if (slot >= 0) padOff(slot);
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -71,7 +86,7 @@ export default function Page() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [candidates, choose, energy, noteOff, noteOn, playing, releaseChord, tap, updateSettings]);
+  }, [candidates, choose, energy, keyboard, noteOff, noteOn, padOff, padOn, playing, releaseChord, tap, updateSettings]);
 
   const preparing = playing && session.readyMs === null;
 
@@ -160,6 +175,7 @@ export default function Page() {
             currentChord={session.chord}
             bpm={session.settings.bpm}
             playing={playing}
+            showNoteKeys={keyboard === "piano"}
           />
           <div className="guide">
             <ul className="legend" aria-label="印の意味">
@@ -190,10 +206,54 @@ export default function Page() {
             </ul>
             <p className="hint">
               {playing
-                ? "コードの札を押すと、その場で鳴って、バンドが次の拍から付いてきます（数字キーでも弾けます）。何度でも弾けます。弾かなければ「自動」の印のコードへ進みます。鍵そのものや、鍵に書いてあるキーを押すと、その音が鳴ります。"
+                ? "コードの札を押すと、その場で鳴って、バンドが次の拍から付いてきます（数字キーでも弾けます）。何度でも弾けます。弾かなければ「自動」の印のコードへ進みます。旋律は、下の「旋律を弾く」で弾けます。"
                 : "開始すると、次に進めるコードが鍵の上に出ます。"}
             </p>
           </div>
+        </section>
+
+        <section className="melody" aria-labelledby="melody-heading">
+          <div className="melody-head">
+            <h2 id="melody-heading" className="jam-heading">
+              旋律を弾く
+            </h2>
+            <fieldset className="melody-mode">
+              <legend className="visually-hidden">旋律を弾く鍵盤</legend>
+              {(
+                [
+                  ["easy", "合う音だけ（A〜K）"],
+                  ["piano", "ピアノの12音"],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="melody-mode-option">
+                  <input
+                    type="radio"
+                    name="keyboard"
+                    value={value}
+                    checked={keyboard === value}
+                    onChange={() => setKeyboard(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+          {keyboard === "easy" ? (
+            <>
+              <MelodyPads
+                padOn={padOn}
+                padOff={padOff}
+                subscribe={session.subscribe}
+                currentChord={session.chord}
+                playing={playing}
+              />
+              <p className="hint">
+                どれを叩いても、いまのコードに合う音が鳴ります。右へ行くほど高い音です。コードが変わると、音も自動で入れ替わります。
+              </p>
+            </>
+          ) : (
+            <p className="hint">上の鍵盤の、鍵に書いてあるキーで12音すべてを弾けます。コードに合わない音も、そのまま鳴ります。</p>
+          )}
         </section>
 
         <JamPad playing={playing} touch={session.touch} onTap={tap} />

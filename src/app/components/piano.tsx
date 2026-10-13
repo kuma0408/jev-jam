@@ -60,6 +60,8 @@ type Props = Pick<
   currentChord: string | null;
   bpm: number;
   playing: boolean;
+  /** 鍵に、その音を弾くパソコンのキーを書くか。合う音だけの鍵盤を使っている間は、キーがそちらに割り当たるので書かない */
+  showNoteKeys: boolean;
 };
 
 /** いまのコードに対する、その鍵の音の立ち位置。押せば、どれもそのままの音で鳴る */
@@ -79,6 +81,7 @@ export function Piano({
   currentChord,
   bpm,
   playing,
+  showNoteKeys,
 }: Props) {
   const currentRoot = currentChord === null ? null : parseChord(currentChord).root;
   const chordClasses = currentChord === null ? [] : chordTones(currentChord).map(pitchClassOf);
@@ -189,7 +192,7 @@ export function Piano({
                 className="piano-jam"
                 data-fit={fit}
                 disabled={!playing}
-                aria-label={`${note} の音を弾く（${keyLabel}キー、${FIT_LABELS[fit]}）`}
+                aria-label={`${note} の音を弾く（${showNoteKeys ? `${keyLabel}キー、` : ""}${FIT_LABELS[fit]}）`}
                 onKeyDown={(event) => {
                   if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
                     event.preventDefault();
@@ -200,7 +203,7 @@ export function Piano({
                   if (event.key === "Enter" || event.key === " ") noteOff(pitchClass);
                 }}
               >
-                {keyLabel}
+                {showNoteKeys ? keyLabel : ""}
               </button>
               <span className="piano-name" data-current={isCurrent}>
                 {note}

@@ -896,8 +896,80 @@ input {
 
 /* ---- 自分でも弾く ---- */
 
-.jam {
+.jam,
+.melody {
   margin-top: 24px;
+}
+
+.melody-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.melody-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  font-size: 0.875rem;
+}
+
+.melody-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+/* 合う音だけの鍵盤。右ほど背が高く、音の高さを形でも示す */
+.pads {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  align-items: end;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: calc(72px + var(--step) * 8px);
+  padding: 10px 4px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+  /* 連打したときに、文字の選択や拡大が起きないようにする */
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.pad-note {
+  font-family: var(--font-latin);
+  font-size: 1.125rem;
+}
+
+.pad[data-hit="true"],
+.pad:active:not(:disabled) {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--paper);
+}
+
+.pad:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .jam-heading {

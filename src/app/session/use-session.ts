@@ -16,6 +16,7 @@ import { chordTones, pitchClassOf } from "../../lib/music/chord.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import { aimPitch, fitsChord } from "../../lib/solo/aim.ts";
 import type { SoloBar, SoloMemo, SoloNote, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
+import { padPitches } from "../../lib/music/pads.ts";
 import { type Energy, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
 import { type NoteExpression, planExpression } from "../../lib/solo/expression.ts";
 import { renderCells } from "../../lib/solo/render-cells.ts";
@@ -54,6 +55,10 @@ export type SessionSettings = {
 
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
 const JAM_TONE_BASE = 72;
+/** 合う音だけの鍵盤の、いちばん左の音のおおよその高さ（MIDIノート番号） */
+export const PAD_LOW = 64;
+/** 押さえている音の覚え書きで、合う音だけの鍵盤の分を12音の鍵盤と区別するための番号のずらし */
+const PAD_HELD_OFFSET = 100;
 /** 自分で弾く音を、自動の伴奏よりどれだけ大きくするか（dB）。8では大きすぎた */
 const JAM_BOOST_DB = 4;
 
@@ -116,6 +121,12 @@ export type Session = {
    */
   noteOn: (pitchClass: number) => void;
   noteOff: (pitchClass: number) => void;
+  /**
+   * 合う音だけの鍵盤を弾く。slot は左から何番目か（0始まり）。
+   * 鳴る音は、押した時点のコードに合う音から決まる。padOff を呼ぶまで鳴り続ける
+   */
+  padOn: (slot: number) => void;
+  padOff: (slot: number) => void;
   /** つまみの値に、ユーザーの叩き方を足した実際の盛り上がり。ソロと伴奏はこれに応える */
   liveEnergy: Energy;
   /** ユーザーが直近1小節にどれだけ叩いたか */
@@ -864,6 +875,26 @@ export function useSession(): Session {
     engine.heldNotes.delete(pitchClass);
   }, []);
 
+  const padOn = useCallback(
+    (slot: number) => {
+      const engine = engineRef.current;
+      const current = engine?.history.at(-1);
+      const held = PAD_HELD_OFFSET + slot;
+      if (!engine || !engine.now || current === undefined || engine.heldNotes.has(held)) return;
+      const pitch = padPitches(current, PAD_LOW)[slot];
+      if (pitch === undefined) return;
+      const { tone } = engine;
+      const frequency = tone.Frequency(pitch, "midi").toFrequency();
+      engine.jam.triggerAttack(frequency, tone.immediate(), 0.95);
+      engine.heldNotes.set(held, frequency);
+      emit({ kind: "jam", pitches: [pitch] });
+      recordTap(engine);
+    },
+    [emit, recordTap],
+  );
+
+  const padOff = useCallback((slot: number) => noteOff(PAD_HELD_OFFSET + slot), [noteOff]);
+
   const updateSettings = useCallback((patch: Partial<SessionSettings>) => {
     setSettings((current) => ({ ...current, ...patch }));
   }, []);
@@ -916,6 +947,8 @@ export function useSession(): Session {
       tap,
       noteOn,
       noteOff,
+      padOn,
+      padOff,
       liveEnergy: live,
       touch,
     }),
@@ -938,6 +971,8 @@ export function useSession(): Session {
       tap,
       noteOn,
       noteOff,
+      padOn,
+      padOff,
       live,
       touch,
     ],
