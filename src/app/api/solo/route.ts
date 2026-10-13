@@ -3,6 +3,7 @@ import { NOTE_NAMES } from "../../../lib/music/chord.ts";
 import { KNOWN_CHORDS } from "../../../lib/progression/candidates.ts";
 import { SOLO_STRATEGIES, type SoloBar, type SoloMemo, type SoloRequest, type SoloResponse } from "../../../lib/solo/api.ts";
 import { SLOTS_PER_BAR, generateBar } from "../../../lib/solo/generate.ts";
+import { generateCellBar } from "../../../lib/solo/generate-cells.ts";
 import { legacyToSoloBar } from "../../../lib/solo/legacy-bar.ts";
 import type { SlotChoice } from "../../../lib/solo/phrase.ts";
 import { HOLD, REST } from "../../../lib/solo/questions.ts";
@@ -39,10 +40,22 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 async function generate(client: DecisionClient, chord: string, body: SoloRequest): Promise<SoloBar> {
-  const phrase = { previousPitch: body.previousPitch, ...body.range };
-  const strategy = body.strategy === "cells" ? "batch" : body.strategy;
-  const result = await generateBar(client, { strategy, chord, bpm: body.bpm, previousBar: body.memo.choices ?? [] });
-  return legacyToSoloBar(result, phrase);
+  if (body.strategy === "cells") {
+    return generateCellBar(client, {
+      chord,
+      bpm: body.bpm,
+      previousPitch: body.previousPitch,
+      range: body.range,
+      memo: body.memo,
+    });
+  }
+  const result = await generateBar(client, {
+    strategy: body.strategy,
+    chord,
+    bpm: body.bpm,
+    previousBar: body.memo.choices ?? [],
+  });
+  return legacyToSoloBar(result, { previousPitch: body.previousPitch, ...body.range });
 }
 
 function isMidiPitch(value: unknown): value is number {
