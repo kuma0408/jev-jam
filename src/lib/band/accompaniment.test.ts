@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { COMP_PATTERNS, accompaniment, bassApproach } from "./accompaniment.ts";
+import { fitsChord } from "../solo/aim.ts";
+import { COMP_PATTERNS, accompaniment, bassApproach, compVoicings } from "./accompaniment.ts";
 
 const first = () => 0;
 const partOf = (chord: string, part: string, options: Parameters<typeof accompaniment>[1] = { bar: 1 }) =>
@@ -119,9 +120,70 @@ describe("accompaniment", () => {
       expect(variants.size).toBeGreaterThanOrEqual(3);
     });
 
+    it("リズムの型は、盛り上がりごとに3種類以上ある", () => {
+      expect(COMP_PATTERNS.length).toBeGreaterThanOrEqual(10);
+      for (const energy of [1, 2, 3, 4] as const) {
+        expect(COMP_PATTERNS.filter((pattern) => pattern.energies.includes(energy)).length).toBeGreaterThanOrEqual(3);
+      }
+    });
+
     it("裏拍から入る型がある", () => {
       const hasOffbeat = COMP_PATTERNS.some((pattern) => pattern.hits.some((hit) => hit.at % 1 === 0.5));
       expect(hasOffbeat).toBe(true);
+    });
+  });
+
+  describe("コードの押さえ方", () => {
+    const chords = ["Cmaj7", "Dm7", "G7", "Am7", "E7", "Fm7", "Bb7", "Abmaj7"];
+
+    it("どのコードにも、押さえ方が4通り以上ある", () => {
+      for (const chord of chords) {
+        const voicings = compVoicings(chord);
+        expect(voicings.length).toBeGreaterThanOrEqual(4);
+        expect(new Set(voicings.map((voicing) => voicing.join(","))).size).toBe(voicings.length);
+      }
+    });
+
+    it("どの押さえ方も、ルートを省き、コードに合う音だけを低い順に並べる", () => {
+      for (const chord of chords) {
+        const root = partOf(chord, "bass")[0]!.pitches[0]! % 12;
+        for (const voicing of compVoicings(chord)) {
+          expect(voicing.length).toBeGreaterThanOrEqual(2);
+          expect(voicing).toEqual([...voicing].sort((a, b) => a - b));
+          for (const pitch of voicing) {
+            expect(pitch % 12).not.toBe(root);
+            expect(fitsChord(pitch, chord)).toBe(true);
+            expect(pitch).toBeGreaterThanOrEqual(48);
+            expect(pitch).toBeLessThanOrEqual(74);
+          }
+        }
+      }
+    });
+
+    it("9thや13thを入れた、色のある押さえ方を含む", () => {
+      // Dm7 の 9th は E、13th は B
+      const tones = new Set(compVoicings("Dm7").flat().map((pitch) => pitch % 12));
+      expect(tones.has(4) || tones.has(11)).toBe(true);
+    });
+
+    it("最初の押さえ方は、3rd・5th・7thの基本形にする（自分で刻むときに鳴る形）", () => {
+      expect(compVoicings("Dm7")[0]!.map((pitch) => pitch % 12).sort((a, b) => a - b)).toEqual([0, 5, 9]);
+    });
+
+    it("伴奏は、小節ごと・1打ごとに押さえ方を変える", () => {
+      const seen = new Set<string>();
+      for (let seed = 0; seed < 60; seed++) {
+        let state = seed * 7919 + 1;
+        // 再現できる簡単な乱数
+        const random = () => {
+          state = (state * 1103515245 + 12345) % 2147483648;
+          return state / 2147483648;
+        };
+        for (const event of accompaniment("Dm7", { bar: 1, energy: 3 }, random)) {
+          if (event.part === "comp") seen.add(event.pitches.join(","));
+        }
+      }
+      expect(seen.size).toBeGreaterThanOrEqual(4);
     });
   });
 
