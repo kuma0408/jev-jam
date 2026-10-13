@@ -28,7 +28,15 @@ const SOLO_RANGE = { low: 60, high: 86 };
 
 type Strategy = "batch" | "two-stage";
 
-type BarResult = { chord: string; latencyMs: number; calls: number; choices: SlotChoice[]; plan?: Record<string, string> };
+type BarResult = {
+  chord: string;
+  latencyMs: number;
+  calls: number;
+  choices: SlotChoice[];
+  plan?: Record<string, string>;
+  /** スロット平均の、最上位の確率・休符の確率・伸ばす確率 */
+  stats: { top: number; rest: number; hold: number };
+};
 
 async function playBar(client: DecisionClient, strategy: Strategy, bar: number, previousBar: SlotChoice[]): Promise<BarResult> {
   const chord = PROGRESSION[bar % PROGRESSION.length]!;
@@ -59,10 +67,15 @@ async function playBar(client: DecisionClient, strategy: Strategy, bar: number, 
   const latencyMs = performance.now() - startedAt;
 
   const choices: SlotChoice[] = [];
+  const stats = { top: 0, rest: 0, hold: 0 };
   for (let slot = 0; slot < SLOTS_PER_BAR; slot++) {
-    choices.push(sampleFromDistribution(answers[`slot_${slot}`]!.probabilities) as SlotChoice);
+    const { probabilities } = answers[`slot_${slot}`]!;
+    choices.push(sampleFromDistribution(probabilities) as SlotChoice);
+    stats.top += Math.max(...Object.values(probabilities)) / SLOTS_PER_BAR;
+    stats.rest += (probabilities.rest ?? 0) / SLOTS_PER_BAR;
+    stats.hold += (probabilities.hold ?? 0) / SLOTS_PER_BAR;
   }
-  return { chord, latencyMs, calls, choices, ...(plan ? { plan } : {}) };
+  return { chord, latencyMs, calls, choices, stats, ...(plan ? { plan } : {}) };
 }
 
 async function run(client: DecisionClient, strategy: Strategy): Promise<void> {
@@ -95,7 +108,11 @@ async function run(client: DecisionClient, strategy: Strategy): Promise<void> {
 
     const line = result.choices.map((choice) => (choice === "rest" ? "." : choice === "hold" ? "-" : choice).padEnd(2)).join(" ");
     const planText = result.plan ? `  [${Object.values(result.plan).join(", ")}]` : "";
-    console.log(`${String(bar + 1).padStart(2)} ${result.chord.padEnd(6)} ${result.latencyMs.toFixed(0).padStart(5)}ms  ${line}${planText}`);
+    const percent = (value: number) => `${(value * 100).toFixed(0).padStart(2)}%`;
+    const statsText = `最上位 ${percent(result.stats.top)} 休符 ${percent(result.stats.rest)} 伸ばす ${percent(result.stats.hold)}`;
+    console.log(
+      `${String(bar + 1).padStart(2)} ${result.chord.padEnd(6)} ${result.latencyMs.toFixed(0).padStart(5)}ms  ${line} ${statsText}${planText}`,
+    );
   }
 
   const sorted = [...latencies].sort((a, b) => a - b);

@@ -8,3 +8,4 @@
 | [0002](0002-nextjs-typescript-tonejs.md) | Next.js + TypeScript + Tone.js を採用する | 技術選定 | Accepted | 2026-10-13 |
 | [0003](0003-rule-based-chord-transition-graph.md) | コード進行の候補は、ルールベースの重み付き遷移グラフで出す | 設計判断 | Accepted | 2026-10-13 |
 | [0004](0004-start-with-jev-spike.md) | アプリ本体より先に、Jevの検証スパイクから始める | 設計判断 | Accepted | 2026-10-13 |
+| [0005](0005-jev-spike-first-measurement.md) | Jevの初回実測: 速度は十分、リズムが課題 | 検証結果 | Accepted | 2026-10-13 |
