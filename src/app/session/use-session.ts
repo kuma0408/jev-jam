@@ -15,7 +15,9 @@ import { accompaniment, bassApproach, compVoicing } from "../../lib/band/accompa
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import type { Energy } from "../../lib/solo/energy.ts";
+import { planScoops } from "../../lib/solo/expression.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
+import { type ExpressiveVoice, createExpressiveVoice } from "./expressive-voice.ts";
 
 const START_CHORD = "Cmaj7";
 const SOLO_START_PITCH = 65;
@@ -85,7 +87,9 @@ export type Session = {
 type Engine = {
   tone: typeof import("tone");
   /** ソロの音源。再生中に切り替えられるよう、すべて読み込んでおく */
-  solos: Record<SoloVoice, import("tone").Sampler>;
+  solos: Record<SoloVoice, ExpressiveVoice>;
+  /** ソロの音源ごとの音量補正 */
+  soloGains: import("tone").Gain[];
   /** ソロ全体の音量 */
   soloVolume: import("tone").Volume;
   /** 強く吹いた音ほど明るくするためのフィルター */
@@ -235,22 +239,27 @@ export function useSession(): Session {
       }
 
       // ソロ
+      let scoopCount = 0;
       if (solo) {
         const { voice } = settingsRef.current;
         const place = (beats: number, swing: boolean) => (swing ? at(beats) : time + beats * beat);
-        for (const note of solo.notes) {
+        // 入りの音や跳び上がった先の音を、下からしゃくって入る
+        const scoops = planScoops(solo.notes, { secondsPerBeat: beat });
+        scoopCount = scoops.filter((scoop) => scoop !== null).length;
+        solo.notes.forEach((note, index) => {
           const start = place(note.startBeats, note.swing);
           const end = place(note.startBeats + note.durationBeats, note.swing);
           const durationSeconds = Math.max(0.04, (end - start) * 0.92);
           engine.soloFilter.frequency.setTargetAtTime(brightnessHz(note.velocity), start, 0.01);
-          engine.solos[voice].triggerAttackRelease(
-            midi(note.pitch),
-            durationSeconds,
-            start,
-            note.velocity,
-          );
+          engine.solos[voice].play({
+            pitch: note.pitch,
+            time: start,
+            duration: durationSeconds,
+            velocity: note.velocity,
+            scoop: scoops[index],
+          });
           draw.schedule(() => emit({ kind: "note", pitch: note.pitch, velocity: note.velocity, durationSeconds }), start);
-        }
+        });
         previous.pitch = solo.lastPitch;
         previous.memo = solo.memo;
       }
@@ -274,7 +283,12 @@ export function useSession(): Session {
               bar,
               chord: current,
               how,
-              solo: solo && { summary: solo.summary, details: solo.details, latencyMs: solo.latencyMs, calls: solo.calls },
+              solo: solo && {
+                summary: solo.summary,
+                details: `${solo.details} / しゃくり ${scoopCount}回`,
+                latencyMs: solo.latencyMs,
+                calls: solo.calls,
+              },
             },
             ...entries,
           ].slice(0, LOG_LIMIT),
@@ -314,6 +328,7 @@ export function useSession(): Session {
     transport.cancel();
     for (const node of [
       ...Object.values(engine.solos),
+      ...engine.soloGains,
       engine.soloVolume,
       engine.soloFilter,
       engine.reverb,
@@ -345,17 +360,19 @@ export function useSession(): Session {
       const reverb = new tone.Reverb({ decay: 1.6, wet: 0.16 }).toDestination();
       const soloFilter = new tone.Filter({ type: "lowpass", frequency: 4000, rolloff: -12 }).connect(reverb);
       const soloVolume = new tone.Volume(settingsRef.current.soloDb).connect(soloFilter);
+      const soloGains: Engine["soloGains"] = [];
       const solos = Object.fromEntries(
         SOLO_VOICES.map((voice) => {
           const instrument = SOLO_INSTRUMENTS[voice];
-          const sampler = new tone.Sampler({ urls: instrument.samples, release: 0.25 }).connect(soloVolume);
-          sampler.volume.value = instrument.gainDb;
-          return [voice, sampler];
+          const gain = new tone.Gain(tone.dbToGain(instrument.gainDb)).connect(soloVolume);
+          soloGains.push(gain);
+          return [voice, createExpressiveVoice(tone, instrument.samples, gain, instrument.startOffset)];
         }),
       ) as Engine["solos"];
       const engine: Engine = {
         tone,
         solos,
+        soloGains,
         soloVolume,
         soloFilter,
         reverb,
@@ -379,7 +396,12 @@ export function useSession(): Session {
       engineRef.current = engine;
 
       // 音源ファイルと残響の準備、最初の小節のソロの取得が終わってから始める
-      await Promise.all([tone.loaded(), reverb.ready, prepare(engine, [START_CHORD], SOLO_START_PITCH, {})]);
+      await Promise.all([
+        tone.loaded(),
+        ...Object.values(solos).map((voice) => voice.loaded),
+        reverb.ready,
+        prepare(engine, [START_CHORD], SOLO_START_PITCH, {}),
+      ]);
       if (engineRef.current !== engine) return;
 
       setLog([]);

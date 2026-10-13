@@ -16,6 +16,8 @@ export type SoloInstrument = {
   range: { low: number; high: number };
   /** 音源ごとの音量差をならすための補正（dB） */
   gainDb: number;
+  /** 音源ファイルの頭にある無音の長さ（秒）。そのぶん先から再生して、発音の遅れを無くす */
+  startOffset: number;
 };
 
 const ELECTRIC_PIANO_SAMPLES = sampleMap("electric-piano", [
@@ -32,20 +34,23 @@ export const SOLO_INSTRUMENTS: Record<SoloVoice, SoloInstrument> = {
       (note) => note.replace("#", "s"),
     ),
     range: { low: 53, high: 77 },
-    // 実測で他の音源より約18dB大きい
+    // 実測で他の音源より約18dB大きく、頭に約28msの無音がある
     gainDb: -12,
+    startOffset: 0.025,
   },
   "tenor-sax": {
     label: "テナーサックス（MIDI音源）",
     samples: sampleMap("tenor-sax", ["A2", "C3", "Eb3", "Gb3", "A3", "C4", "Eb4", "Gb4", "A4", "C5", "Eb5", "Gb5"]),
     range: { low: 53, high: 77 },
     gainDb: 6,
+    startOffset: 0,
   },
   "electric-piano": {
     label: "エレピ",
     samples: ELECTRIC_PIANO_SAMPLES,
     range: { low: 60, high: 84 },
     gainDb: 7,
+    startOffset: 0,
   },
 };
 
