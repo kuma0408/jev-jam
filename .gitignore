@@ -20,3 +20,10 @@ coverage/
 
 # 検証スクリプトの出力
 spikes/out/
+
+# Next.jsが生成する型定義
+next-env.d.ts
+*.tsbuildinfo
+
+# ブラウザ自動操作の出力
+.playwright-mcp/
