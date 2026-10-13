@@ -90,8 +90,12 @@ type Engine = {
   reverb: import("tone").Reverb;
   comp: import("tone").Sampler;
   bass: import("tone").Sampler;
-  /** シンバル。ノイズの高い成分だけを通して鳴らす */
-  ride: import("tone").NoiseSynth;
+  /**
+   * シンバル。鳴らしっぱなしのノイズを、音量の包絡で短く切り出す。
+   * NoiseSynth は1打ごとにノイズを止めるので、速いテンポで打が重なると時刻の順序エラーになる
+   */
+  rideNoise: import("tone").Noise;
+  ride: import("tone").AmplitudeEnvelope;
   rideFilter: import("tone").Filter;
   bar: number;
   /** これまでに鳴らしたコード（古い順） */
@@ -182,8 +186,10 @@ export function useSession(): Session {
       const { tone } = engine;
       const first = engine.bar === 0;
       const options = first ? [] : nextChordCandidates(engine.history);
-      const current = first ? START_CHORD : (engine.selected ?? options[0]!.chord);
-      const how: BarLog["how"] = first ? "start" : engine.selected === null ? "auto" : "chosen";
+      // 画面の候補は音に合わせて少し遅れて切り替わる。その隙に押された、前の小節の候補は無視する
+      const picked = options.find((candidate) => candidate.chord === engine.selected)?.chord;
+      const current = first ? START_CHORD : (picked ?? options[0]!.chord);
+      const how: BarLog["how"] = first ? "start" : picked === undefined ? "auto" : "chosen";
       const solo = engine.prepared.get(current) ?? null;
       const bar = engine.bar + 1;
       const draw = tone.getDraw();
@@ -207,7 +213,7 @@ export function useSession(): Session {
         } else if (event.part === "comp") {
           engine.comp.triggerAttackRelease(event.pitches.map(midi), duration, start, event.velocity);
         } else {
-          engine.ride.triggerAttackRelease(0.05, start, event.velocity);
+          engine.ride.triggerAttackRelease(0.02, start, event.velocity);
         }
       }
       for (let i = 0; i < 4; i++) {
@@ -279,6 +285,7 @@ export function useSession(): Session {
       engine.reverb,
       engine.comp,
       engine.bass,
+      engine.rideNoise,
       engine.ride,
       engine.rideFilter,
     ]) {
@@ -320,7 +327,8 @@ export function useSession(): Session {
         reverb,
         comp: new tone.Sampler({ urls: COMP_SAMPLES, release: 0.6 }).connect(reverb),
         bass: new tone.Sampler({ urls: BASS_SAMPLES, release: 0.3 }).toDestination(),
-        ride: new tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.09, sustain: 0 } }),
+        rideNoise: new tone.Noise("white"),
+        ride: new tone.AmplitudeEnvelope({ attack: 0.001, decay: 0.08, sustain: 0, release: 0.02 }),
         rideFilter: new tone.Filter({ type: "highpass", frequency: 7000 }).connect(reverb),
         bar: 0,
         history: [],
@@ -328,8 +336,9 @@ export function useSession(): Session {
         selected: null,
         requestToken: 0,
       };
-      engine.ride.connect(engine.rideFilter);
-      engine.ride.volume.value = -10;
+      engine.rideNoise.chain(engine.ride, engine.rideFilter);
+      engine.rideNoise.volume.value = -10;
+      engine.rideNoise.start();
       engine.comp.volume.value = COMP_GAIN_DB;
       engine.bass.volume.value = BASS_GAIN_DB;
       engineRef.current = engine;
@@ -342,7 +351,19 @@ export function useSession(): Session {
       const previous = { pitch: SOLO_START_PITCH, memo: {} as SoloMemo };
       const transport = tone.getTransport();
       transport.bpm.value = settingsRef.current.bpm;
-      transport.scheduleRepeat((time) => onBar(engine, time, previous), "1m", 0);
+      transport.scheduleRepeat(
+        (time) => {
+          try {
+            onBar(engine, time, previous);
+          } catch (cause) {
+            // 1小節の失敗でセッション全体が黙って止まらないよう、画面に出して次の小節へ進む
+            console.error("小節の予約に失敗しました", cause);
+            setError(cause instanceof Error ? cause.message : String(cause));
+          }
+        },
+        "1m",
+        0,
+      );
       transport.start("+0.1");
       setStatus("playing");
     } catch (cause) {

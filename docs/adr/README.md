@@ -16,3 +16,4 @@
 | [0010](0010-progression-from-known-fragments.md) | コード候補は、定番進行の断片と履歴の照合で出す | 設計判断 | Accepted | 2026-10-13 |
 | [0011](0011-cells-implemented-and-batched.md) | 型の方式を実装し、全候補の質問を1回のリクエストにまとめた | 検証結果 | Accepted | 2026-10-13 |
 | [0012](0012-rule-based-accompaniment.md) | 伴奏はルールで動かし、Jevは使わない | 設計判断 | Accepted | 2026-10-13 |
+| [0013](0013-white-ui-with-reactive-particles.md) | 画面を白基調に作り直し、音に反応する粒子の背景を置く | 工夫 | Accepted | 2026-10-13 |

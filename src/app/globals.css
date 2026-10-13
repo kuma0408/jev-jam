@@ -1,15 +1,19 @@
-/* 確認用の最低限のスタイル。配色は背景に対して十分なコントラストを取る */
+/* 白を基調に、文字と鍵盤は濃い藍で締める。色は背景の粒子と冒険度の印だけに使う */
 :root {
-  --bg: #12141a;
-  --panel: #1c2029;
-  --border: #3a4152;
-  --text: #f1f3f7;
-  --muted: #b3bac8;
-  --accent: #ffd166;
-  --accent-text: #1a1400;
-  --white-key: #f4f1ea;
-  --black-key: #2a2d36;
-  --danger: #ff9a8b;
+  --paper: #ffffff;
+  --ink: #17132e;
+  --ink-soft: #55516b;
+  --line: #dcdae6;
+  /* 部品の輪郭は白地に対して3:1以上を取る */
+  --line-strong: #7b7890;
+  --green: #0c8558;
+  --red: #cf2e25;
+  --blue: #2a62f2;
+  --purple: #7d3be6;
+  --focus: #2a62f2;
+  --font-latin: var(--font-display), "Helvetica Neue", Arial, sans-serif;
+  --font-text: var(--font-body), "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
 }
 
 * {
@@ -18,27 +22,12 @@
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, sans-serif;
-  line-height: 1.5;
-}
-
-main {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px 16px 64px;
-}
-
-h1 {
-  font-size: 1.4rem;
-  margin: 0 0 16px;
-}
-
-h2 {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
   font-size: 1rem;
-  margin: 28px 0 8px;
-  color: var(--muted);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -49,164 +38,859 @@ input {
 }
 
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
+  /* 黒鍵の上でも輪郭が見えるよう、内側に白い縁を足す */
+  box-shadow: 0 0 0 2px var(--paper);
 }
 
-.controls {
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 背景の粒子。操作の邪魔をしないよう、最背面に固定する */
+.particle-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px clamp(16px, 4vw, 40px) 64px;
+}
+
+/* ---- 上段: 名前と接続の状況 ---- */
+
+.top {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
 }
 
-.controls label {
+.brand {
+  margin: 0;
+  font-family: var(--font-latin);
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-stretch: 85%;
+  letter-spacing: -0.01em;
+}
+
+.meters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.meter {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: baseline;
 }
 
-.controls select {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+.meter dt {
+  color: var(--ink-soft);
 }
 
-.primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border: 0;
-  border-radius: 6px;
-  padding: 10px 20px;
+.meter dd {
+  margin: 0;
   font-weight: 700;
-  cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
 
-.now {
+.meter dd[data-busy="true"] {
+  color: var(--ink-soft);
+}
+
+.alert {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  background: #fff1ef;
+  border: 2px solid var(--red);
+  border-radius: 12px;
+  color: #7d130d;
+  font-weight: 500;
+}
+
+.alert-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background: var(--red);
+  border-radius: 50%;
+  color: #fff;
+  font-family: var(--font-latin);
+  font-weight: 800;
+}
+
+/* ---- 舞台: いまのコードと次のコード、開始ボタン ---- */
+
+.stage {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
-  align-items: baseline;
-  margin-top: 20px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 32px;
+  min-height: clamp(150px, 24vh, 230px);
+  padding: clamp(16px, 4vh, 40px) 0 20px;
+}
+
+.stage-lead {
+  margin: 0;
+  font-size: clamp(2rem, 6.4vw, 4.25rem);
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+}
+
+.stage-chords {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px clamp(24px, 6vw, 72px);
+}
+
+.stage-now,
+.stage-next {
+  display: flex;
+  flex-direction: column;
+}
+
+.stage-label {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 .now-chord {
-  font-size: 3rem;
-  font-weight: 700;
+  min-width: 4.2ch;
+  font-family: var(--font-latin);
+  font-size: clamp(4.5rem, 15vw, 9rem);
+  font-weight: 800;
+  font-stretch: 75%;
+  line-height: 0.86;
+  letter-spacing: -0.035em;
+}
+
+.next-chord {
   min-width: 5ch;
+  font-family: var(--font-latin);
+  font-size: clamp(2rem, 5.5vw, 3.25rem);
+  font-weight: 700;
+  font-stretch: 75%;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 
-.status {
-  color: var(--muted);
+.next-how {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
-.status strong {
-  color: var(--text);
+.next-how[data-chosen="true"] {
+  color: var(--ink);
+  font-weight: 700;
 }
 
-.warning {
-  color: var(--danger);
-}
-
-.keyboard {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 4px;
-}
-
-.key {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+.transport {
+  display: inline-flex;
+  gap: 12px;
   align-items: center;
-  gap: 2px;
-  min-height: 150px;
-  padding: 8px 2px;
-  border: 2px solid transparent;
-  border-radius: 0 0 8px 8px;
+  justify-content: center;
+  min-width: 148px;
+  min-height: 56px;
+  padding: 0 28px 0 24px;
+  background: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 1.0625rem;
+  font-weight: 700;
   cursor: pointer;
-  font-size: 0.8rem;
-  text-align: center;
+  transition: scale 120ms ease-out;
 }
 
-.key.white {
-  background: var(--white-key);
-  color: #14161c;
+.transport:hover:not(:disabled) {
+  scale: 1.03;
 }
 
-.key.black {
-  background: var(--black-key);
-  color: var(--text);
-  min-height: 110px;
-  align-self: start;
+.transport:active:not(:disabled) {
+  scale: 0.98;
 }
 
-.key[data-empty="true"] {
-  opacity: 0.35;
+/* 停止は白抜きにして、開始と形でも見分けられるようにする */
+.transport[data-playing="true"] {
+  background: var(--paper);
+  color: var(--ink);
 }
 
-.key-option {
+.transport:disabled {
+  background: var(--ink-soft);
+  border-color: var(--ink-soft);
+  cursor: progress;
+}
+
+/* 再生の三角。停止中は四角にする */
+.transport-icon {
+  width: 14px;
+  height: 16px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.transport[data-playing="true"] .transport-icon {
+  width: 14px;
+  height: 14px;
+  clip-path: none;
+  border-radius: 2px;
+}
+
+/* ---- 鍵盤 ---- */
+
+.piano {
+  --piano-height: clamp(310px, 44vh, 400px);
+  container-type: inline-size;
+  padding: 0 clamp(6px, 1.2vw, 12px) clamp(6px, 1.2vw, 12px);
+  background: var(--ink);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 0 rgba(23, 19, 46, 0.4),
+    0 28px 56px -24px rgba(23, 19, 46, 0.45);
+}
+
+/* 鍵盤の上の縁。小節の残り時間をここに置く */
+.piano-rail {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 6px;
+  color: #fff;
+}
+
+.piano-rail-label {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.bar-timer {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.bar-timer-beat {
+  height: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+}
+
+.bar-timer-fill {
+  display: block;
+  height: 100%;
+  background: #fff;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.piano-keys {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  height: var(--piano-height);
+}
+
+.piano-note {
+  position: relative;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.piano-note.is-white {
+  grid-row: 1;
+  grid-column: var(--slot);
+  padding: 6px 5px 8px;
+  background: linear-gradient(to bottom, #f1f0f6, #fff 14%);
+  border-radius: 0 0 10px 10px;
+}
+
+/* 黒鍵は、白鍵の境目に重ねて置く */
+.piano-note.is-black {
+  position: absolute;
+  top: 0;
+  left: calc(var(--slot) * 100% / 7);
+  z-index: 2;
+  width: calc(100% / 7 * 0.6);
+  height: 56%;
+  padding: 6px 0 8px;
+  translate: -50% 0;
+  background: linear-gradient(to bottom, #17132e, #2c2750);
+  border-radius: 0 0 8px 8px;
+  box-shadow:
+    inset 0 -6px 0 rgba(255, 255, 255, 0.08),
+    0 6px 10px -4px rgba(23, 19, 46, 0.6);
+}
+
+/* 次に進む先の鍵は、冒険度の色でほんのり染める */
+.piano-note[data-next="1"] {
+  --tint: var(--blue);
+}
+
+.piano-note[data-next="2"] {
+  --tint: var(--purple);
+}
+
+.piano-note[data-next="3"] {
+  --tint: var(--red);
+}
+
+.piano-note.is-white[data-next] {
+  background: linear-gradient(to bottom, #f1f0f6, #fff 14%, color-mix(in srgb, var(--tint) 20%, #fff));
+}
+
+.piano-note.is-black[data-next] {
+  background: linear-gradient(to bottom, #17132e, color-mix(in srgb, var(--tint) 55%, #17132e));
+}
+
+.piano-options {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
   align-items: center;
   width: 100%;
-  padding: 4px 0;
-  background: transparent;
-  border: 2px solid currentColor;
-  border-radius: 6px;
+}
+
+.piano-name {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-family: var(--font-latin);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.is-black .piano-name {
+  color: #cfcce0;
+}
+
+/* いま鳴っているコードのルートは、音名を塗りつぶして示す */
+.piano-name[data-current="true"],
+.legend-current {
+  background: var(--ink);
+  color: #fff;
+}
+
+.is-black .piano-name[data-current="true"] {
+  background: #fff;
+  color: var(--ink);
+}
+
+/* 鍵の上に出る選択肢 */
+.chip {
+  --tone: var(--blue);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  min-height: 48px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 2px solid var(--line-strong);
+  border-radius: 12px;
+  color: var(--ink);
+  text-align: left;
   cursor: pointer;
+  transition:
+    translate 100ms ease-out,
+    background-color 100ms ease-out;
 }
 
-.key-option[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+.chip[data-adventure="2"] {
+  --tone: var(--purple);
 }
 
-.key .chord {
-  font-size: 1.05rem;
+.chip[data-adventure="3"] {
+  --tone: var(--red);
+}
+
+.is-black .chip {
+  min-width: 0;
+  /* 黒鍵の上では白い縁で浮かせる */
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.chip:hover {
+  translate: 0 -2px;
+  background: color-mix(in srgb, var(--tone) 10%, #fff);
+}
+
+.chip:active {
+  translate: 0 1px;
+}
+
+/* 白鍵に選択肢が2つ並ぶときは、黒鍵の下に収まるよう詰める */
+.is-white .piano-options:has(.chip + .chip) .chip {
+  min-height: 46px;
+  padding: 3px 8px;
+}
+
+.is-white .piano-options:has(.chip + .chip) .chip[data-state="auto"] {
+  padding: 2px 7px;
+}
+
+.is-white .piano-options:has(.chip + .chip) .chip-chord {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.is-white .piano-options:has(.chip + .chip) .chip-flag {
+  display: none;
+}
+
+/* 鍵に選択肢が1つだけなら、鍵のどこを押しても選べるようにする */
+.chip:only-child::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+/* 既定（選ばなければ進む先）は破線、ユーザーが選んだものは塗りつぶし */
+.chip[data-state="auto"] {
+  border: 3px dashed var(--tone);
+  padding: 5px 9px;
+}
+
+.chip[data-state="chosen"] {
+  background: var(--tone);
+  border-color: var(--tone);
+  color: #fff;
+}
+
+.chip-number {
+  display: grid;
+  grid-row: 1;
+  grid-column: 1;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+  font-family: var(--font-latin);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chip-chord {
+  grid-row: 1;
+  grid-column: 2;
+  font-family: var(--font-latin);
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-stretch: 75%;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.chip-meta {
+  display: flex;
+  grid-row: 2;
+  grid-column: 1 / -1;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.chip-flag {
+  grid-row: 3;
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.adventure-mark {
+  flex: none;
+  fill: var(--blue);
+}
+
+.adventure-mark[data-adventure="2"] {
+  fill: var(--purple);
+}
+
+.adventure-mark[data-adventure="3"] {
+  fill: var(--red);
+}
+
+.chip[data-state="chosen"] .adventure-mark {
+  fill: #fff;
+}
+
+/* 鍵盤が広いときは、印と状態を横に並べて高さを抑える */
+@container (min-width: 900px) {
+  .is-white .chip {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .is-white .chip-flag {
+    grid-row: 2;
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .is-white .chip-meta {
+    grid-column: 1 / 3;
+  }
+
+  .chip {
+    min-height: 60px;
+    padding: 8px 12px;
+  }
+
+  .chip[data-state="auto"] {
+    padding: 7px 11px;
+  }
+
+  .chip-chord {
+    font-size: 1.625rem;
+  }
+
+  .is-white .piano-options:has(.chip + .chip) .chip-flag {
+    display: inline;
+  }
+
+  .is-black .chip-chord {
+    font-size: 1.375rem;
+  }
+}
+
+/* 鍵盤が狭いとき（スマホ幅）は、番号・コード名・印だけに絞る */
+@container (max-width: 640px) {
+  .piano-note.is-white {
+    padding: 4px 2px 6px;
+  }
+
+  .piano-note.is-black {
+    width: calc(100% / 7 * 0.62);
+  }
+
+  .chip {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    justify-items: center;
+    min-height: 46px;
+    padding: 4px 2px;
+    border-radius: 9px;
+    text-align: center;
+  }
+
+  .chip[data-state="auto"] {
+    padding: 3px 1px;
+  }
+
+  .is-black .chip {
+    min-width: 44px;
+    padding-inline: 3px;
+  }
+
+  /* 2つ重ねても黒鍵の下に収まる高さを確保する */
+  .piano-keys {
+    height: max(var(--piano-height), 344px);
+  }
+
+  .piano-options {
+    gap: 4px;
+  }
+
+  /* 見出しと残り時間を2段に分ける */
+  .piano-rail {
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+    padding: 10px 4px;
+  }
+
+  .is-white .piano-options:has(.chip + .chip) .chip {
+    padding: 3px 2px;
+  }
+
+  .is-white .piano-options:has(.chip + .chip) .chip[data-state="auto"] {
+    padding: 3px 1px;
+  }
+
+  .is-white .piano-options:has(.chip + .chip) .chip-chord {
+    font-size: clamp(0.75rem, 3.6cqi, 1rem);
+  }
+
+  .chip-number {
+    width: 17px;
+    height: 17px;
+    border-width: 1px;
+    border-radius: 5px;
+    font-size: 0.6875rem;
+  }
+
+  .chip-chord {
+    grid-row: 2;
+    grid-column: 1;
+    font-size: clamp(0.75rem, 3.6cqi, 1rem);
+  }
+
+  .chip-meta {
+    grid-row: 3;
+    grid-column: 1;
+  }
+
+  .chip-level,
+  .chip-flag {
+    display: none;
+  }
+
+  .adventure-mark {
+    scale: 0.8;
+  }
+
+  .piano-name {
+    min-width: 20px;
+    height: 18px;
+    padding: 0 3px;
+    font-size: 0.6875rem;
+  }
+}
+
+.guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  align-items: baseline;
+  margin-top: 14px;
+  font-size: 0.8125rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   font-weight: 700;
 }
 
-.key .tag {
-  font-size: 0.7rem;
-  font-weight: 700;
+.legend li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.legend-current {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 18px;
+  border-radius: 999px;
+  font-family: var(--font-latin);
+  font-size: 0.6875rem;
+  line-height: 1;
 }
 
 .hint {
-  color: var(--muted);
-  font-size: 0.85rem;
-  margin: 8px 0 0;
+  flex: 1 1 320px;
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+/* ---- 演奏の設定 ---- */
+
+.dock {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px 28px;
+  margin-top: 28px;
+  padding: 18px 22px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-label {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.field-value {
+  font-family: var(--font-latin);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.field input[type="range"] {
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ---- 小節ごとの記録 ---- */
+
+.log {
+  margin-top: 20px;
+  font-size: 0.8125rem;
+}
+
+.log summary {
+  display: inline-flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 4px;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.log summary::before {
+  content: "＋";
+}
+
+.log[open] summary::before {
+  content: "－";
+}
+
+.log-count {
+  font-weight: 400;
+}
+
+.log-empty {
+  margin: 8px 4px 0;
+  color: var(--ink-soft);
 }
 
 .table-wrap {
+  margin-top: 8px;
   overflow-x: auto;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
   text-align: left;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-th {
-  color: var(--muted);
-  font-weight: 600;
+tbody tr:last-child td {
+  border-bottom: 0;
 }
 
-td.notes {
-  font-family: ui-monospace, monospace;
+th {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.log-miss {
+  color: #a3201a;
+  font-weight: 500;
+}
+
+@media (max-width: 560px) {
+  .transport {
+    width: 100%;
+  }
+
+  .piano-rail-label {
+    font-size: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transport,
+  .chip {
+    transition: none;
+  }
+
+  .transport:hover:not(:disabled),
+  .transport:active:not(:disabled) {
+    scale: 1;
+  }
+
+  .chip:hover,
+  .chip:active {
+    translate: none;
+  }
 }
