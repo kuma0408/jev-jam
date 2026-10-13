@@ -25,6 +25,8 @@ export type Rhythm = {
   energy: Energy;
   /** true ならスウィングさせない */
   straight?: boolean;
+  /** 16分音符を含むリズム。均等に刻み、遅いテンポほど選ばれやすくする */
+  sixteenths?: boolean;
 };
 
 const ALL: readonly TempoBand[] = ["slow", "medium", "fast"];
@@ -216,10 +218,12 @@ export const RHYTHMS: readonly Rhythm[] = [
     hits: [{ at: 0, dur: 1 }, ...run(3, THIRD, 1)],
   },
   {
-    id: "r-swing-sixteenth-turn",
-    bands: ["medium"],
+    id: "r-sixteenth-turn",
+    bands: ["slow", "medium"],
     energy: 4,
-    description: "A quick four-note sixteenth flourish, then two calmer eighth notes.",
+    straight: true,
+    sixteenths: true,
+    description: "A quick flourish of four even sixteenth notes, then two calmer eighth notes.",
     hits: [...run(4, 0.25), ...run(2, 0.5, 1)],
   },
 
@@ -229,6 +233,7 @@ export const RHYTHMS: readonly Rhythm[] = [
     bands: ["slow"],
     energy: 1,
     straight: true,
+    sixteenths: true,
     description: "A quick grace note sliding into a long held note. Tender ballad ornament.",
     hits: [
       { at: 0, dur: 0.25, accent: "ghost" },
@@ -240,6 +245,7 @@ export const RHYTHMS: readonly Rhythm[] = [
     bands: ["slow"],
     energy: 2,
     straight: true,
+    sixteenths: true,
     description: "Long, a quick snapped short note, then long again. Expressive ballad phrasing.",
     hits: [
       { at: 0, dur: 0.75 },
@@ -248,10 +254,29 @@ export const RHYTHMS: readonly Rhythm[] = [
     ],
   },
   {
+    id: "r-late-sixteenth-four",
+    bands: ["slow", "medium"],
+    energy: 2,
+    straight: true,
+    sixteenths: true,
+    description: "Wait one beat in silence, then four even sixteenth notes slip in. A sudden, graceful run inside a calm phrase.",
+    hits: run(4, 0.25, 1),
+  },
+  {
+    id: "r-long-sixteenth-pickup",
+    bands: ["slow", "medium"],
+    energy: 2,
+    straight: true,
+    sixteenths: true,
+    description: "One long, singing note, then three quick even sixteenth notes that lead into the next phrase.",
+    hits: [{ at: 0, dur: 1.25 }, ...run(3, 0.25, 1.25)],
+  },
+  {
     id: "r-sixteenth-burst-long",
     bands: ["slow", "medium"],
     energy: 3,
     straight: true,
+    sixteenths: true,
     description: "A quick burst of four even sixteenth notes that lands on a long note. Excited, then sings.",
     hits: [...run(4, 0.25), { at: 1, dur: 1, accent: "accent" }],
   },
@@ -260,6 +285,7 @@ export const RHYTHMS: readonly Rhythm[] = [
     bands: ["slow", "medium"],
     energy: 3,
     straight: true,
+    sixteenths: true,
     description: "Hold one note, then four even sixteenth notes rushing toward the next phrase.",
     hits: [{ at: 0, dur: 1 }, ...run(4, 0.25, 1)],
   },
@@ -268,6 +294,7 @@ export const RHYTHMS: readonly Rhythm[] = [
     bands: ["slow", "medium"],
     energy: 3,
     straight: true,
+    sixteenths: true,
     description: "A funky, syncopated figure of even sixteenth notes with a held note in the middle. Neo soul feel.",
     hits: [
       { at: 0, dur: 0.25 },
@@ -282,6 +309,7 @@ export const RHYTHMS: readonly Rhythm[] = [
     bands: ["slow"],
     energy: 4,
     straight: true,
+    sixteenths: true,
     description: "Rest for a moment, then six even sixteenth notes surging forward. Double-time feel.",
     hits: run(6, 0.25, 0.5),
   },
@@ -290,6 +318,7 @@ export const RHYTHMS: readonly Rhythm[] = [
     bands: ["slow"],
     energy: 4,
     straight: true,
+    sixteenths: true,
     description: "Eight fast, perfectly even sixteenth notes. A double-time run over the slow beat, sheets of sound.",
     hits: run(8, 0.25),
   },
@@ -309,4 +338,16 @@ export function rhythmById(id: string): Rhythm {
 export function rhythmsFor(bpm: number): Rhythm[] {
   const band = tempoBand(bpm);
   return RHYTHMS.filter((rhythm) => rhythm.bands.includes(band));
+}
+
+/** テンポ帯ごとの、16分音符のリズムに掛ける倍率。ゆったりした拍の上で細かく動くと映える */
+const SIXTEENTH_BOOST: Record<TempoBand, number> = { slow: 2.5, medium: 1.5, fast: 1 };
+const SIXTEENTH_IDS = new Set(RHYTHMS.filter((rhythm) => rhythm.sixteenths).map((rhythm) => rhythm.id));
+
+/** 16分音符のリズムを選ばれやすくする。バラードの中にも、ときどき細かい動きが入るようにするため */
+export function boostSixteenths(probabilities: Record<string, number>, bpm: number): Record<string, number> {
+  const boost = SIXTEENTH_BOOST[tempoBand(bpm)];
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => [id, SIXTEENTH_IDS.has(id) ? probability * boost : probability]),
+  );
 }

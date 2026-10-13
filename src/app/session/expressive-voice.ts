@@ -1,6 +1,6 @@
 // 録音音源を、1音ごとに音程と音量を動かしながら鳴らす音源。
 // Tone.js の Sampler は鳴らし始めた音の音程を動かせないので、ソロ用に自前で持つ。
-import type { Scoop } from "../../lib/solo/expression.ts";
+import { type NoteExpression, renderExpression } from "../../lib/solo/expression.ts";
 
 type Tone = typeof import("tone");
 
@@ -13,8 +13,8 @@ export type VoiceNote = {
   duration: number;
   /** 強さ（0〜1） */
   velocity: number;
-  /** 下からしゃくって入るときの曲げ方 */
-  scoop?: Scoop | null;
+  /** 吹き方。しゃくり、音量の動き、ビブラート、フォールなど */
+  expression: NoteExpression;
 };
 
 export type ExpressiveVoice = {
@@ -24,7 +24,6 @@ export type ExpressiveVoice = {
   dispose: () => void;
 };
 
-const ATTACK_SECONDS = 0.012;
 const RELEASE_SECONDS = 0.07;
 
 function semitoneRatio(semitones: number): number {
@@ -62,15 +61,21 @@ export function createExpressiveVoice(
       const voice = { source, gain };
       active.add(voice);
 
-      // しゃくり: 低い音程から始めて、目的の音程まで滑らかに上げる
-      if (note.scoop) {
-        source.playbackRate.setValueAtTime(rate * semitoneRatio(-note.scoop.semitones), note.time);
-        source.playbackRate.exponentialRampToValueAtTime(rate, note.time + note.scoop.seconds);
+      // 1音の中の音程と音量の動きを、曲線としてまとめて予約する
+      const curves = renderExpression(note.expression, note.duration);
+      if (curves.pitch.some((offset) => offset !== 0)) {
+        source.playbackRate.setValueCurveAtTime(
+          curves.pitch.map((offset) => rate * semitoneRatio(offset)),
+          note.time,
+          note.duration,
+        );
       }
-
       const end = note.time + note.duration;
-      gain.gain.setValueAtTime(0, note.time);
-      gain.gain.linearRampToValueAtTime(note.velocity, note.time + ATTACK_SECONDS);
+      gain.gain.setValueCurveAtTime(
+        curves.gain.map((level) => level * note.velocity),
+        note.time,
+        note.duration,
+      );
       gain.gain.setTargetAtTime(0, end, RELEASE_SECONDS / 3);
 
       source.onended = () => {

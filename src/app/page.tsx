@@ -21,24 +21,28 @@ export default function Page() {
   // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      // 文字を打つ場所（選択肢の一覧）にいるときだけ無視する。つまみやスライダーを触った後でも弾けるようにする
+      if (event.target instanceof HTMLSelectElement) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      // ボタンにフォーカスがあるときのスペースは、そのボタンを押す操作として扱う
-      const onButton = event.target instanceof HTMLButtonElement;
-      if (playing && !event.repeat && !onButton) {
-        if (event.key === " ") {
+      // event.key は日本語入力がオンだと文字が取れない（"Process" になる）ので、物理キーの位置で判定する
+      const { code } = event;
+      // ボタンやつまみにフォーカスがあるときのスペースと上下キーは、その部品の操作として扱う
+      const onControl = event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement;
+      if (playing && !event.repeat) {
+        if (code === "Space" && !onControl) {
           tap();
           event.preventDefault();
           return;
         }
-        const tone = JAM_KEYS.indexOf(event.key.toLowerCase() as (typeof JAM_KEYS)[number]);
+        const tone = JAM_KEYS.findIndex((key) => code === `Key${key.toUpperCase()}`);
         if (tone >= 0) {
           playTone(tone);
+          event.preventDefault();
           return;
         }
       }
-      if (playing && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-        const next = energy + (event.key === "ArrowUp" ? 1 : -1);
+      if (playing && !onControl && (code === "ArrowUp" || code === "ArrowDown")) {
+        const next = energy + (code === "ArrowUp" ? 1 : -1);
         if (isEnergy(next)) {
           updateSettings({ energy: next });
         }
@@ -46,7 +50,8 @@ export default function Page() {
         event.preventDefault();
         return;
       }
-      const candidate = candidates[Number(event.key) - 1];
+      const digit = /^(?:Digit|Numpad)([1-9])$/.exec(code)?.[1];
+      const candidate = digit === undefined ? undefined : candidates[Number(digit) - 1];
       if (candidate) {
         choose(candidate.chord);
       }

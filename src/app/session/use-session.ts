@@ -16,7 +16,7 @@ import { chordTones, pitchClassOf } from "../../lib/music/chord.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import { type Energy, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
-import { planScoops } from "../../lib/solo/expression.ts";
+import { planExpression } from "../../lib/solo/expression.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
 import { type ExpressiveVoice, createExpressiveVoice } from "./expressive-voice.ts";
 
@@ -42,8 +42,10 @@ export type SessionSettings = {
 
 /** 鍵盤とは別に、ユーザーが自分で弾ける「いまのコードの音」の数 */
 export const JAM_TONE_COUNT = 4;
-/** 自分で弾く音の高さ。伴奏より上、ソロの邪魔にならない音域 */
-const JAM_TONE_BASE = 60;
+/** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
+const JAM_TONE_BASE = 72;
+/** 自分で弾く音を、自動の伴奏よりどれだけ大きくするか（dB） */
+const JAM_BOOST_DB = 8;
 
 /** 音が実際に鳴るタイミングで届く通知。背景の演出などに使う */
 export type SessionEvent =
@@ -112,6 +114,8 @@ type Engine = {
   soloFilter: import("tone").Filter;
   reverb: import("tone").Reverb;
   comp: import("tone").Sampler;
+  /** ユーザーが自分で弾く音。自動の伴奏に埋もれないよう、別の音源にして大きく鳴らす */
+  jam: import("tone").Sampler;
   bass: import("tone").Sampler;
   /**
    * シンバル。鳴らしっぱなしのノイズを、音量の包絡で短く切り出す。
@@ -285,13 +289,21 @@ export function useSession(): Session {
       }
 
       // ソロ
-      let scoopCount = 0;
+      let expressionSummary = "";
       if (solo) {
         const { voice } = settingsRef.current;
         const place = (beats: number, swing: boolean) => (swing ? at(beats) : time + beats * beat);
-        // 入りの音や跳び上がった先の音を、下からしゃくって入る
-        const scoops = planScoops(solo.notes, { secondsPerBeat: beat });
-        scoopCount = scoops.filter((scoop) => scoop !== null).length;
+        // 1音ごとの吹き方（しゃくり、音量の動き、ビブラート、フォール）をルールで決める
+        const expressions = planExpression(solo.notes, { secondsPerBeat: beat });
+        expressionSummary = [
+          ["しゃくり", expressions.filter((expression) => expression.scoopSemitones > 0).length],
+          ["音量の動き", expressions.filter((expression) => expression.shape !== "flat").length],
+          ["ビブラート", expressions.filter((expression) => expression.vibrato).length],
+          ["フォール", expressions.filter((expression) => expression.fall).length],
+        ]
+          .filter(([, count]) => count !== 0)
+          .map(([name, count]) => `${name}${count}`)
+          .join(" ");
         solo.notes.forEach((note, index) => {
           const start = place(note.startBeats, note.swing);
           const end = place(note.startBeats + note.durationBeats, note.swing);
@@ -302,7 +314,7 @@ export function useSession(): Session {
             time: start,
             duration: durationSeconds,
             velocity: note.velocity,
-            scoop: scoops[index],
+            expression: expressions[index]!,
           });
           draw.schedule(() => emit({ kind: "note", pitch: note.pitch, velocity: note.velocity, durationSeconds }), start);
         });
@@ -331,7 +343,7 @@ export function useSession(): Session {
               how,
               solo: solo && {
                 summary: solo.summary,
-                details: `${solo.details} / しゃくり ${scoopCount}回`,
+                details: expressionSummary ? `${solo.details} / 表現 ${expressionSummary}` : solo.details,
                 latencyMs: solo.latencyMs,
                 calls: solo.calls,
               },
@@ -379,6 +391,7 @@ export function useSession(): Session {
       engine.soloFilter,
       engine.reverb,
       engine.comp,
+      engine.jam,
       engine.bass,
       engine.rideNoise,
       engine.ride,
@@ -424,6 +437,7 @@ export function useSession(): Session {
         soloFilter,
         reverb,
         comp: new tone.Sampler({ urls: COMP_SAMPLES, release: 0.6 }).connect(reverb),
+        jam: new tone.Sampler({ urls: COMP_SAMPLES, release: 0.8 }).connect(reverb),
         bass: new tone.Sampler({ urls: BASS_SAMPLES, release: 0.3 }).toDestination(),
         rideNoise: new tone.Noise("white"),
         ride: new tone.AmplitudeEnvelope({ attack: 0.001, decay: 0.08, sustain: 0, release: 0.02 }),
@@ -441,6 +455,7 @@ export function useSession(): Session {
       engine.rideNoise.volume.value = -10;
       engine.rideNoise.start();
       engine.comp.volume.value = COMP_GAIN_DB;
+      engine.jam.volume.value = COMP_GAIN_DB + JAM_BOOST_DB;
       engine.bass.volume.value = BASS_GAIN_DB;
       engineRef.current = engine;
 
@@ -521,11 +536,13 @@ export function useSession(): Session {
     const current = engine?.history.at(-1);
     if (!engine || current === undefined) return;
     const { tone } = engine;
-    engine.comp.triggerAttackRelease(
-      compVoicing(current).map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
-      0.3,
+    // いちばん上の音を1オクターブ上にも重ねて、輪郭をはっきりさせる
+    const voicing = compVoicing(current);
+    engine.jam.triggerAttackRelease(
+      [...voicing, voicing.at(-1)! + 12].map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
+      0.4,
       tone.now(),
-      0.55,
+      0.9,
     );
     engine.lastCompTapBar = engine.bar;
     recordTap(engine);
@@ -539,11 +556,11 @@ export function useSession(): Session {
       const note = chordTones(current)[index];
       if (note === undefined) return;
       const { tone } = engine;
-      engine.comp.triggerAttackRelease(
+      engine.jam.triggerAttackRelease(
         tone.Frequency(JAM_TONE_BASE + pitchClassOf(note), "midi").toFrequency(),
-        0.45,
-        tone.now(),
         0.6,
+        tone.now(),
+        0.95,
       );
       recordTap(engine);
     },

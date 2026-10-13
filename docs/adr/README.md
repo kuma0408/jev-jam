@@ -23,3 +23,4 @@
 | [0017](0017-scoop-with-own-sample-player.md) | ソロの音に「しゃくり」を付けるため、音源の鳴らし方を自前で持つ | 工夫 | Accepted | 2026-10-13 |
 | [0018](0018-user-plays-along.md) | ユーザーが自分でも音を出せるようにし、その叩き方にバンドが応える | 設計判断 | Accepted | 2026-10-13 |
 | [0019](0019-solo-follows-its-own-history.md) | ソロに、これまでの流れと「前のフレーズとの関係」を持たせる | 設計判断 | Accepted | 2026-10-13 |
+| [0020](0020-expression-curves-and-feedback-fixes.md) | 一音の中の音程と音量を曲線で動かし、聴いた指摘を直す | 工夫 | Accepted | 2026-10-13 |

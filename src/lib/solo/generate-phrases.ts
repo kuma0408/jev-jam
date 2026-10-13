@@ -6,7 +6,7 @@ import { CONTOURS, type Contour, contourById } from "./contours.ts";
 import { ENERGY, type Energy, TOUCH_CUE, type Touch } from "./energy.ts";
 import type { ChoiceQuestion } from "./questions.ts";
 import { type Dynamics, type Shape, renderCells } from "./render-cells.ts";
-import { RHYTHMS, type Rhythm, rhythmById, rhythmsFor } from "./rhythms.ts";
+import { RHYTHMS, type Rhythm, boostSixteenths, rhythmById, rhythmsFor } from "./rhythms.ts";
 
 export type PhraseBarsInput = {
   /** ソロを用意したいコード。次に選べる候補すべてを一度に渡す */
@@ -95,15 +95,18 @@ const RECENT_PENALTY = 0.3;
 const REST_ID = "r-rest";
 
 /**
- * 直前に使ったリズムや動きの確率を下げる。Jevは同じ状況には同じ分布を返しやすいので、
- * そのまま抽選すると同じフレーズが続きやすい。休みは繰り返してよいので下げない。
+ * 最近使ったリズムや動きの確率を下げる。Jevは同じ状況には同じ分布を返しやすいので、
+ * そのまま抽選すると同じフレーズが続きやすい。使った回数が多いものほど大きく下げる。
+ * 休みは繰り返してよいので下げない。
+ *
+ * @param recent 最近使ったID。同じIDが複数回入っていれば、その回数ぶん下げる
  */
 export function penalizeRecent(probabilities: Record<string, number>, recent: readonly string[]): Record<string, number> {
   return Object.fromEntries(
-    Object.entries(probabilities).map(([id, probability]) => [
-      id,
-      id !== REST_ID && recent.includes(id) ? probability * RECENT_PENALTY : probability,
-    ]),
+    Object.entries(probabilities).map(([id, probability]) => {
+      const uses = id === REST_ID ? 0 : recent.filter((used) => used === id).length;
+      return [id, probability * RECENT_PENALTY ** uses];
+    }),
   );
 }
 
@@ -168,6 +171,11 @@ export async function generatePhraseBars(
   // 履歴が無く直前の小節だけが渡されたときは、それを1小節ぶんの履歴として扱う
   const history = input.memo.history ?? (input.memo.cells ? [{ chord: "", cells: input.memo.cells }] : []);
   const recent = history.at(-1)?.cells ?? [];
+  /** 直近の数小節で使ったすべてのID。同じものを何度も使っていれば、そのぶん重複して入る */
+  const used = history.flatMap((bar) => bar.cells);
+  /** 直近2小節の両方で使われているか。そうなら、もう引き継がせない */
+  const overused = (id: string | undefined) =>
+    id !== undefined && history.length >= 2 && history.slice(-2).every((bar) => bar.cells.includes(id));
 
   /** 送り返されたIDを、一覧にあるものだけ説明文に直す */
   const describeBar = (bar: { chord: string; cells: readonly string[] }): string => {
@@ -192,11 +200,16 @@ export async function generatePhraseBars(
   const [r1, c1, r2, c2] = recent;
   const motif =
     r1 && c1 && r1 !== REST_ID ? { rhythm: r1, contour: c1 } : r2 && c2 && r2 !== REST_ID ? { rhythm: r2, contour: c2 } : null;
-  const motifRhythm = rhythms.find((rhythm) => rhythm.id === motif?.rhythm);
-  const motifContour = CONTOURS.find((contour) => contour.id === motif?.contour);
+  const motifRhythm = overused(motif?.rhythm) ? undefined : rhythms.find((rhythm) => rhythm.id === motif?.rhythm);
+  const motifContour = overused(motif?.contour) ? undefined : CONTOURS.find((contour) => contour.id === motif?.contour);
 
   const pickRhythm = (probabilities: Record<string, number>, used: readonly string[], energy = input.energy) =>
-    rhythmById(sampleFromDistribution(biasByEnergy(penalizeRecent(probabilities, used), energy), random));
+    rhythmById(
+      sampleFromDistribution(
+        biasByEnergy(boostSixteenths(penalizeRecent(probabilities, used), input.bpm), energy),
+        random,
+      ),
+    );
   const pickContour = (probabilities: Record<string, number>, used: readonly string[]) =>
     contourById(sampleFromDistribution(penalizeRecent(probabilities, used), random));
 
@@ -253,12 +266,12 @@ export async function generatePhraseBars(
       keepRhythm && motifRhythm
         ? motifRhythm
         : relation === "space"
-          ? pickRhythm(rhythmOdds, recent, 1)
-          : pickRhythm(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds, recent);
+          ? pickRhythm(rhythmOdds, used, 1)
+          : pickRhythm(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds, used);
     const contour =
       keepContour && motifContour
         ? motifContour
-        : pickContour(relation === "contrast" ? contrasted(contourOdds) : contourOdds, recent);
+        : pickContour(relation === "contrast" ? contrasted(contourOdds) : contourOdds, used);
     return { rhythm, contour };
   });
   const dynamicsBias = DYNAMICS_BIAS[input.energy];
@@ -298,10 +311,10 @@ export async function generatePhraseBars(
 
   return input.chords.map((chord, index) => {
     const firstHalf = firstHalves[index]!;
-    const used = [...recent, firstHalf.rhythm.id, firstHalf.contour.id];
+    const usedSoFar = [...used, firstHalf.rhythm.id, firstHalf.contour.id];
     const secondHalf = {
-      rhythm: pickRhythm(second[`rhythm_second_${index}`]!.probabilities, used),
-      contour: pickContour(second[`contour_second_${index}`]!.probabilities, used),
+      rhythm: pickRhythm(second[`rhythm_second_${index}`]!.probabilities, usedSoFar),
+      contour: pickContour(second[`contour_second_${index}`]!.probabilities, usedSoFar),
     };
     const notes = renderCells(
       [compose(firstHalf.rhythm, firstHalf.contour), compose(secondHalf.rhythm, secondHalf.contour)],
