@@ -281,6 +281,22 @@ describe("generatePhraseBars（小節をまたいで音を伸ばす）", () => {
     expect(bar!.summary).toBe("tie-long + rest");
   });
 
+  it("最後の音を次のコードへ寄せられるなら、寄せた先の音で持ち越す", async () => {
+    // 直前の音 F は D7 に合わないが、締切で次のコードが決まった後に鳴らす音なら、E へ寄せてから持ち越せる
+    const { client, calls } = scriptedClient({ ...picks, rhythm_first_0: "r-tie-long" });
+    const history = [{ chord: "Dm7", cells: ["r-half", "c-arch", "r-late-long", "c-arch"] }];
+    const [bar] = await generatePhraseBars(client, { ...sustained, chords: ["D7"], retargetable: true, memo: { history } });
+    expect(tieIds(calls[0]!.questions.rhythm_first_0!.criteria).length).toBeGreaterThan(0);
+    expect(bar!.notes[0]).toMatchObject({ pitch: 64, tie: true });
+  });
+
+  it("寄せられない音（締切より前から鳴っている音）は、合わなければ持ち越さない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const history = [{ chord: "Dm7", cells: ["r-half", "c-arch", "r-half", "c-arch"] }];
+    await generatePhraseBars(client, { ...sustained, chords: ["D7"], retargetable: false, memo: { history } });
+    expect(tieIds(calls[0]!.questions.rhythm_first_0!.criteria)).toEqual([]);
+  });
+
   it("前の音がまだ鳴っていることをJevに伝える", async () => {
     const yes = scriptedClient(picks);
     const no = scriptedClient(picks);
