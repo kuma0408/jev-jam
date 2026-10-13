@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChoiceAnswer, DecisionClient } from "../jev/client.ts";
 import { contourById } from "./contours.ts";
 import { biasByEnergy, generatePhraseBars, penalizeRecent, spaceBias } from "./generate-phrases.ts";
+import { renderCells } from "./render-cells.ts";
 import { RHYTHMS, rhythmById } from "./rhythms.ts";
 
 /** 質問ごとに決めた選択肢へ確率1を返し、呼び出しを記録するクライアント */
@@ -522,6 +523,25 @@ describe("generatePhraseBars（16分音符で走り続ける）", () => {
     };
     // 1小節走った後は続きやすく、2小節走った後は止まりやすい
     expect(await runRate(1)).toBeGreaterThan((await runRate(2)) + 0.3);
+  });
+});
+
+describe("generatePhraseBars（途中でコードが変わっても乗せ直せる）", () => {
+  it("選ばれたフレーズを、別のコードの上に乗せ直すための情報を返す", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, input);
+    expect(bar!.plan).toBeDefined();
+    // 同じ情報でもう一度音に直すと、返ってきた音と同じになる
+    expect(renderCells(bar!.plan!.cells, "Dm7", bar!.plan!.render)).toEqual(bar!.notes);
+  });
+
+  it("乗せ直すと、同じリズムのまま、新しいコードの音になる", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, input);
+    const moved = renderCells(bar!.plan!.cells, "G7", bar!.plan!.render);
+    expect(moved.map((note) => note.startBeats)).toEqual(bar!.notes.map((note) => note.startBeats));
+    // G7 のルート・3rd・5th・7th = G B D F
+    expect(moved.map((note) => note.pitch % 12)).toEqual([7, 11, 2, 5]);
   });
 });
 
