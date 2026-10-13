@@ -18,9 +18,10 @@ import type { SoloBar, SoloMemo, SoloRequest, SoloResponse, SoloStrategy } from 
 import { type Energy, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
 import { planExpression } from "../../lib/solo/expression.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
-import { type ExpressiveVoice, createExpressiveVoice } from "./expressive-voice.ts";
+import { type ExpressiveVoice, type HeldNote, createExpressiveVoice } from "./expressive-voice.ts";
 
 const START_CHORD = "Cmaj7";
+const BEATS_PER_BAR = 4;
 const SOLO_START_PITCH = 65;
 const LOG_LIMIT = 24;
 export const BPM_MIN = 60;
@@ -136,8 +137,10 @@ type Engine = {
   taps: number[];
   /** ユーザーが最後に伴奏を刻んだ小節。刻んでいる間は自動の伴奏を黙らせる */
   lastCompTapBar: number;
+  /** 小節の終わりまで伸びて、まだ鳴っているソロの音。次の小節で持ち越すか切るかを決める */
+  held: HeldNote | null;
   /** 次の小節のために最後に出した依頼。設定が変わったときに出し直す */
-  lastRequest: { chords: string[]; previousPitch: number; memo: SoloMemo } | null;
+  lastRequest: { chords: string[]; previousPitch: number; memo: SoloMemo; sustained: boolean } | null;
 };
 
 async function requestSolos(request: SoloRequest): Promise<SoloResponse> {
@@ -206,10 +209,17 @@ export function useSession(): Session {
 
   /** 指定したコードすべての分のソロを、先に依頼しておく */
   const prepare = useCallback(
-    (engine: Engine, chords: string[], previousPitch: number, memo: SoloMemo, keepPrepared = false) => {
+    (
+      engine: Engine,
+      chords: string[],
+      previousPitch: number,
+      memo: SoloMemo,
+      sustained: boolean,
+      keepPrepared = false,
+    ) => {
       const token = ++engine.requestToken;
       const requestedAt = performance.now();
-      engine.lastRequest = { chords, previousPitch, memo };
+      engine.lastRequest = { chords, previousPitch, memo, sustained };
       // 出し直しのときは、新しい分が届くまで用意済みのソロを残しておく（間に合わなければそれを使う）
       if (!keepPrepared) {
         engine.prepared = new Map();
@@ -227,6 +237,7 @@ export function useSession(): Session {
         touch: touchOf(taps),
         // これから作るのは、いまの小節の次の小節。4小節のまとまりの中の位置を伝える
         barInPhrase: engine.bar % 4,
+        sustained,
         memo,
       })
         .then((response) => {
@@ -288,6 +299,14 @@ export function useSession(): Session {
         draw.schedule(() => emit({ kind: "beat", beat: i }), time + i * beat);
       }
 
+      // 前の小節から鳴り続けている音。この小節の最初の音が「持ち越し」なら伸ばし、そうでなければここで切る
+      const held = engine.held;
+      engine.held = null;
+      const tied = solo?.notes[0]?.tie === true && held !== null;
+      if (held && !tied) {
+        held.releaseAt(time);
+      }
+
       // ソロ
       let expressionSummary = "";
       if (solo) {
@@ -295,11 +314,14 @@ export function useSession(): Session {
         const place = (beats: number, swing: boolean) => (swing ? at(beats) : time + beats * beat);
         // 1音ごとの吹き方（しゃくり、音量の動き、ビブラート、フォール）をルールで決める
         const expressions = planExpression(solo.notes, { secondsPerBeat: beat });
+        // 持ち越しの音は新しく発音しないので、表現の数には入れない
+        const voiced = expressions.filter((_, index) => !solo.notes[index]!.tie);
         expressionSummary = [
-          ["しゃくり", expressions.filter((expression) => expression.scoopSemitones > 0).length],
-          ["音量の動き", expressions.filter((expression) => expression.shape !== "flat").length],
-          ["ビブラート", expressions.filter((expression) => expression.vibrato).length],
-          ["フォール", expressions.filter((expression) => expression.fall).length],
+          ["しゃくり", voiced.filter((expression) => expression.scoopSemitones > 0).length],
+          ["音量の動き", voiced.filter((expression) => expression.shape !== "flat").length],
+          ["ビブラート", voiced.filter((expression) => expression.vibrato).length],
+          ["フォール", voiced.filter((expression) => expression.fall).length],
+          ["持ち越し", tied ? 1 : 0],
         ]
           .filter(([, count]) => count !== 0)
           .map(([name, count]) => `${name}${count}`)
@@ -307,15 +329,24 @@ export function useSession(): Session {
         solo.notes.forEach((note, index) => {
           const start = place(note.startBeats, note.swing);
           const end = place(note.startBeats + note.durationBeats, note.swing);
-          const durationSeconds = Math.max(0.04, (end - start) * 0.92);
+          if (note.tie) {
+            // 持ち越しの音は新しく発音せず、鳴っている音をここまで伸ばす。鳴っている音が無ければ何もしない
+            if (index === 0 && tied) held?.releaseAt(end);
+            return;
+          }
+          // 小節の終わりまで伸びる音は、切らずに保留する。次の小節へ持ち越すかどうかは、次の小節の頭で決める
+          const open = note.startBeats + note.durationBeats >= BEATS_PER_BAR - 0.05;
+          const durationSeconds = Math.max(0.04, (end - start) * (open ? 1 : 0.92));
           engine.soloFilter.frequency.setTargetAtTime(brightnessHz(note.velocity), start, 0.01);
-          engine.solos[voice].play({
+          const heldNote = engine.solos[voice].play({
             pitch: note.pitch,
             time: start,
             duration: durationSeconds,
             velocity: note.velocity,
             expression: expressions[index]!,
+            open,
           });
+          if (heldNote) engine.held = heldNote;
           draw.schedule(() => emit({ kind: "note", pitch: note.pitch, velocity: note.velocity, durationSeconds }), start);
         });
         previous.pitch = solo.lastPitch;
@@ -327,6 +358,8 @@ export function useSession(): Session {
         next.map((candidate) => candidate.chord),
         previous.pitch,
         previous.memo,
+        // この小節の最後の音が鳴り続けるなら、次の小節はそれを持ち越せる
+        engine.held !== null,
       );
 
       // 画面は、音が実際に鳴るタイミングに合わせて更新する
@@ -447,6 +480,7 @@ export function useSession(): Session {
         prepared: new Map(),
         selected: null,
         requestToken: 0,
+        held: null,
         taps: [],
         lastCompTapBar: -1,
         lastRequest: null,
@@ -464,7 +498,7 @@ export function useSession(): Session {
         tone.loaded(),
         ...Object.values(solos).map((voice) => voice.loaded),
         reverb.ready,
-        prepare(engine, [START_CHORD], SOLO_START_PITCH, {}),
+        prepare(engine, [START_CHORD], SOLO_START_PITCH, {}, false),
       ]);
       if (engineRef.current !== engine) return;
 
@@ -588,8 +622,8 @@ export function useSession(): Session {
   useEffect(() => {
     const engine = engineRef.current;
     if (engine?.lastRequest && engine.bar > 0) {
-      const { chords, previousPitch, memo } = engine.lastRequest;
-      void prepare(engine, chords, previousPitch, memo, true);
+      const { chords, previousPitch, memo, sustained } = engine.lastRequest;
+      void prepare(engine, chords, previousPitch, memo, sustained, true);
     }
   }, [live, touch, prepare]);
 

@@ -15,12 +15,24 @@ export type VoiceNote = {
   velocity: number;
   /** 吹き方。しゃくり、音量の動き、ビブラート、フォールなど */
   expression: NoteExpression;
+  /**
+   * true なら、長さが来ても音を切らずに鳴らし続ける。いつ切るかは、戻り値の releaseAt で後から決める。
+   * 小節の終わりまで伸びる音を、次の小節へ持ち越すかどうか決まるまで保留するために使う
+   */
+  open?: boolean;
+};
+
+/** 鳴らし続けている音。releaseAt を呼ぶまで切れない */
+export type HeldNote = {
+  /** 指定した時刻（オーディオの時刻、秒）に音を切る */
+  releaseAt: (time: number) => void;
 };
 
 export type ExpressiveVoice = {
   /** 音源ファイルの読み込みが終わると解決する */
   loaded: Promise<void>;
-  play: (note: VoiceNote) => void;
+  /** open を指定した音のときだけ、後から切るための HeldNote を返す */
+  play: (note: VoiceNote) => HeldNote | null;
   dispose: () => void;
 };
 
@@ -70,13 +82,15 @@ export function createExpressiveVoice(
           note.duration,
         );
       }
-      const end = note.time + note.duration;
       gain.gain.setValueCurveAtTime(
         curves.gain.map((level) => level * note.velocity),
         note.time,
         note.duration,
       );
-      gain.gain.setTargetAtTime(0, end, RELEASE_SECONDS / 3);
+      const releaseAt = (time: number) => {
+        gain.gain.setTargetAtTime(0, time, RELEASE_SECONDS / 3);
+        source.stop(time + RELEASE_SECONDS * 2);
+      };
 
       source.onended = () => {
         active.delete(voice);
@@ -84,7 +98,11 @@ export function createExpressiveVoice(
         gain.dispose();
       };
       source.start(note.time, startOffset);
-      source.stop(end + RELEASE_SECONDS * 2);
+      if (note.open) {
+        return { releaseAt };
+      }
+      releaseAt(note.time + note.duration);
+      return null;
     },
     dispose() {
       for (const { source, gain } of active) {

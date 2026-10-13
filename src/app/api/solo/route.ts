@@ -55,6 +55,7 @@ async function generateAll(client: DecisionClient, body: SoloRequest): Promise<P
         energy: body.energy,
         touch: body.touch,
         barInPhrase: body.barInPhrase,
+        sustained: body.sustained,
       });
       return bars.map((value) => ({ status: "fulfilled", value }));
     } catch (reason) {
@@ -126,7 +127,10 @@ function parseMemo(value: unknown): SoloMemo | null {
 
 function parseRequest(value: unknown): SoloRequest | null {
   if (typeof value !== "object" || value === null) return null;
-  const { chords, strategy, bpm, previousPitch, range, energy, touch, barInPhrase } = value as Record<string, unknown>;
+  const { chords, strategy, bpm, previousPitch, range, energy, touch, barInPhrase, sustained } = value as Record<
+    string,
+    unknown
+  >;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) return null;
   if (!chords.every((chord) => typeof chord === "string" && KNOWN_CHORDS.includes(chord))) return null;
@@ -145,8 +149,10 @@ function parseRequest(value: unknown): SoloRequest | null {
   const { low, high } = range as Record<string, unknown>;
   if (!isMidiPitch(low) || !isMidiPitch(high) || high - low < 12) return null;
 
+  if (typeof sustained !== "boolean") return null;
+
   const memo = parseMemo((value as Record<string, unknown>).memo);
   if (!memo) return null;
 
-  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, touch: touchValue, barInPhrase, memo };
+  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, touch: touchValue, barInPhrase, sustained, memo };
 }

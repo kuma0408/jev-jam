@@ -21,6 +21,8 @@ export type SoloNote = {
   velocity: number;
   /** スウィングをかけるか。3連符のように位置が決まっている音は false */
   swing: boolean;
+  /** true なら、前の小節の最後の音を持ち越して伸ばす音。新しく発音しない */
+  tie?: boolean;
 };
 
 /** 次の小節を依頼するときに送り返す、直前の小節の記録 */
@@ -68,6 +70,8 @@ export type SoloRequest = {
   touch: Touch;
   /** 4小節のまとまりの中で、これから作る小節が何番目か（0〜3） */
   barInPhrase: number;
+  /** 直前の小節の最後の音が、小節の終わりまで鳴り続けているか。そうなら次の小節へ持ち越せる */
+  sustained: boolean;
   memo: SoloMemo;
 };
 

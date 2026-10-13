@@ -1,12 +1,23 @@
 import type { DecisionClient } from "../jev/client.ts";
+import { pitchClassOf } from "../music/chord.ts";
 import { sampleFromDistribution } from "../music/sample.ts";
+import { soloCandidates } from "../music/solo-candidates.ts";
 import type { SoloBar, SoloMemo } from "./api.ts";
 import type { Cell } from "./cells.ts";
 import { CONTOURS, type Contour, contourById } from "./contours.ts";
 import { ENERGY, type Energy, TOUCH_CUE, type Touch } from "./energy.ts";
 import type { ChoiceQuestion } from "./questions.ts";
 import { type Dynamics, type Shape, renderCells } from "./render-cells.ts";
-import { RHYTHMS, type Rhythm, boostSixteenths, rhythmById, rhythmsFor } from "./rhythms.ts";
+import {
+  RHYTHMS,
+  type Rhythm,
+  TIE_RHYTHMS,
+  boostSixteenths,
+  favorDownbeat,
+  leadsOut,
+  rhythmById,
+  rhythmsFor,
+} from "./rhythms.ts";
 
 export type PhraseBarsInput = {
   /** ソロを用意したいコード。次に選べる候補すべてを一度に渡す */
@@ -22,6 +33,8 @@ export type PhraseBarsInput = {
   touch?: Touch;
   /** 4小節のまとまりの中で、これから作る小節が何番目か（0〜3） */
   barInPhrase?: number;
+  /** 直前の小節の最後の音（previousPitch）が、小節の終わりまで鳴り続けているか */
+  sustained?: boolean;
 };
 
 /** 前のフレーズとの関係。人のアドリブで「考えて吹いている」ように聞こえる部分を、Jevに選ばせる */
@@ -110,7 +123,16 @@ export function penalizeRecent(probabilities: Record<string, number>, recent: re
   );
 }
 
-const RHYTHM_ENERGY = new Map(RHYTHMS.map((rhythm) => [rhythm.id, rhythm.energy]));
+const RHYTHM_ENERGY = new Map([...RHYTHMS, ...TIE_RHYTHMS].map((rhythm) => [rhythm.id, rhythm.energy]));
+
+/**
+ * 鳴っている音を、このコードの上でそのまま伸ばしてよいか。
+ * コードのスケールに含まれ、かつ響きがぶつかる音（説明文で経過音に限ると書いた音）でなければよい。
+ */
+function fitsChord(pitch: number, chord: string): boolean {
+  const candidate = soloCandidates(chord).find((note) => pitchClassOf(note.note) === ((pitch % 12) + 12) % 12);
+  return candidate !== undefined && !/passing/.test(candidate.description);
+}
 
 /**
  * リズムの確率を、盛り上がりのつまみに近い音数のものへ寄せる。
@@ -138,21 +160,28 @@ function question(instructions: string, options: readonly { id: string; descript
 }
 
 function describe(rhythm: Rhythm, contour: Contour): string {
-  return rhythm.hits.length === 0 ? rhythm.description : `Rhythm: ${rhythm.description} Melody: ${contour.description}`;
+  return voicedCount(rhythm) === 0 ? rhythm.description : `Rhythm: ${rhythm.description} Melody: ${contour.description}`;
+}
+
+/** 新しく発音する音の数。持ち越して伸ばす音は数えない */
+function voicedCount(rhythm: Rhythm): number {
+  return rhythm.hits.filter((hit) => !hit.tie).length;
 }
 
 /** リズムと音の動きを組み合わせて、半小節ぶんのフレーズにする */
 function compose(rhythm: Rhythm, contour: Contour): Cell {
-  const steps = contour.notes(rhythm.hits.length);
+  // 持ち越しの音は高さが決まっているので、動きは新しく発音する音にだけ割り当てる
+  const steps = contour.notes(voicedCount(rhythm));
+  let next = 0;
   return {
     ...(rhythm.straight ? { straight: true } : {}),
-    notes: rhythm.hits.map((hit, index) => ({ ...hit, ...steps[index]! })),
+    notes: rhythm.hits.map((hit) => (hit.tie ? { ...hit, step: 0 } : { ...hit, ...steps[next++]! })),
   };
 }
 
 function label(rhythm: Rhythm, contour: Contour): string {
   const name = (id: string) => id.slice(2);
-  return rhythm.hits.length === 0 ? name(rhythm.id) : `${name(rhythm.id)} / ${name(contour.id)}`;
+  return voicedCount(rhythm) === 0 ? name(rhythm.id) : `${name(rhythm.id)} / ${name(contour.id)}`;
 }
 
 /**
@@ -180,7 +209,7 @@ export async function generatePhraseBars(
   /** 送り返されたIDを、一覧にあるものだけ説明文に直す */
   const describeBar = (bar: { chord: string; cells: readonly string[] }): string => {
     const texts = [
-      ...RHYTHMS.filter((rhythm) => bar.cells.includes(rhythm.id)),
+      ...[...RHYTHMS, ...TIE_RHYTHMS].filter((rhythm) => bar.cells.includes(rhythm.id)),
       ...CONTOURS.filter((contour) => bar.cells.includes(contour.id)),
     ].map((item) => item.description);
     return `${bar.chord ? `Over ${bar.chord}: ` : ""}${texts.join(" ")}`;
@@ -193,6 +222,9 @@ export async function generatePhraseBars(
     ...(input.touch && input.touch !== "none" ? { accompanist: TOUCH_CUE[input.touch] } : {}),
     where_we_are: PHRASE_POSITIONS[input.barInPhrase ?? 0] ?? PHRASE_POSITIONS[0],
     solo_so_far: history.length > 0 ? history.map(describeBar) : "nothing yet, the solo is just starting",
+    ...(input.sustained
+      ? { still_sounding: "The last note of the previous bar is still being held as this bar begins." }
+      : {}),
     ...(input.memo.dynamics ? { previous_bar_volume: input.memo.dynamics } : {}),
   };
 
@@ -210,6 +242,16 @@ export async function generatePhraseBars(
         random,
       ),
     );
+
+  // 前の小節が次へつなぐ形で終わっていたら、この小節は頭から鳴らして受け止める
+  const previousEnding = [...RHYTHMS, ...TIE_RHYTHMS].find((rhythm) => rhythm.id === recent[2]);
+  const mustLand = previousEnding !== undefined && leadsOut(previousEnding);
+  /** このコードの上で、小節の前半に選べるリズム */
+  const firstHalfRhythms = (chord: string): Rhythm[] => [
+    ...(mustLand ? rhythms.filter((rhythm) => rhythm.hits[0]?.at === 0) : rhythms),
+    // 鳴っている音がこのコードに合うときだけ、持ち越して伸ばす選択肢を出す。合わなければ小節の終わりで切れる
+    ...(input.sustained && fitsChord(input.previousPitch, chord) ? TIE_RHYTHMS : []),
+  ];
   const pickContour = (probabilities: Record<string, number>, used: readonly string[]) =>
     contourById(sampleFromDistribution(penalizeRecent(probabilities, used), random));
 
@@ -218,7 +260,7 @@ export async function generatePhraseBars(
   input.chords.forEach((chord, index) => {
     firstQuestions[`rhythm_first_${index}`] = question(
       `Pick the rhythm the improvising soloist plays in the first half of this bar, over the chord ${chord}. Follow the bandleader's cue. A great solo breathes: it answers the previous phrase, mixes movement with space, and does not repeat the same rhythm.`,
-      rhythms,
+      firstHalfRhythms(chord),
     );
     firstQuestions[`contour_first_${index}`] = question(
       `Pick how the melody moves in the first half of this bar, over the chord ${chord}. It should answer or develop the previous phrase rather than repeat it.`,
@@ -260,14 +302,17 @@ export async function generatePhraseBars(
     const contrasted = (odds: Record<string, number>) =>
       Object.fromEntries(Object.entries(odds).map(([id, odd]) => [id, recent.includes(id) ? odd * CONTRAST_PENALTY : odd]));
 
-    const keepRhythm = relation === "develop-rhythm" || relation === "echo";
+    // 着地が必要なのに、引き継ぐリズムが遅れて入るものなら、引き継がない
+    const canKeepRhythm = motifRhythm !== undefined && !(mustLand && motifRhythm.hits[0]?.at !== 0);
+    const keepRhythm = canKeepRhythm && (relation === "develop-rhythm" || relation === "echo");
     const keepContour = relation === "develop-melody" || relation === "echo";
     const rhythm =
       keepRhythm && motifRhythm
         ? motifRhythm
         : relation === "space"
           ? pickRhythm(rhythmOdds, used, 1)
-          : pickRhythm(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds, used);
+          : // 間で応えるとき以外は、小節の頭から鳴るリズムを選ばれやすくする
+            pickRhythm(favorDownbeat(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds), used);
     const contour =
       keepContour && motifContour
         ? motifContour

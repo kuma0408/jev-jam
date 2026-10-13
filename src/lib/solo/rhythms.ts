@@ -12,7 +12,7 @@ export function tempoBand(bpm: number): TempoBand {
   return bpm < SLOW_BELOW_BPM ? "slow" : bpm > FAST_ABOVE_BPM ? "fast" : "medium";
 }
 
-export type RhythmHit = Pick<CellNote, "at" | "dur" | "accent">;
+export type RhythmHit = Pick<CellNote, "at" | "dur" | "accent" | "tie">;
 
 export type Rhythm = {
   id: string;
@@ -324,7 +324,45 @@ export const RHYTHMS: readonly Rhythm[] = [
   },
 ];
 
-const RHYTHMS_BY_ID = new Map(RHYTHMS.map((rhythm) => [rhythm.id, rhythm]));
+/**
+ * 前の小節の最後の音を、新しく発音せずにそのまま伸ばすリズム。
+ * 前の音が小節の終わりまで鳴っていて、次のコードにも合うときだけ、前半の選択肢に加える。
+ */
+export const TIE_RHYTHMS: readonly Rhythm[] = [
+  {
+    id: "r-tie-short",
+    bands: ALL,
+    energy: 1,
+    description: "Keep holding the note from the previous bar across the bar line for one more beat, then breathe. Smooth and connected.",
+    hits: [{ at: 0, dur: 1, tie: true }],
+  },
+  {
+    id: "r-tie-long",
+    bands: ALL,
+    energy: 1,
+    description: "Keep holding the note from the previous bar across the bar line for two more beats. One long line sailing over the chord change.",
+    hits: [{ at: 0, dur: 2, tie: true }],
+  },
+  {
+    id: "r-tie-then-two",
+    bands: ALL,
+    energy: 2,
+    description: "Keep holding the note from the previous bar for one beat across the bar line, then move on with two quick notes.",
+    hits: [{ at: 0, dur: 1, tie: true }, ...run(2, 0.5, 1)],
+  },
+  {
+    id: "r-tie-then-long",
+    bands: ALL,
+    energy: 2,
+    description: "Keep holding the note from the previous bar for one beat across the bar line, then step to a new sustained note.",
+    hits: [
+      { at: 0, dur: 1, tie: true },
+      { at: 1, dur: 1 },
+    ],
+  },
+];
+
+const RHYTHMS_BY_ID = new Map([...RHYTHMS, ...TIE_RHYTHMS].map((rhythm) => [rhythm.id, rhythm]));
 
 export function rhythmById(id: string): Rhythm {
   const rhythm = RHYTHMS_BY_ID.get(id);
@@ -349,5 +387,36 @@ export function boostSixteenths(probabilities: Record<string, number>, bpm: numb
   const boost = SIXTEENTH_BOOST[tempoBand(bpm)];
   return Object.fromEntries(
     Object.entries(probabilities).map(([id, probability]) => [id, SIXTEENTH_IDS.has(id) ? probability * boost : probability]),
+  );
+}
+
+const HALF_BAR_BEATS = 2;
+/** これ以下の長さの音で終わるなら、伸ばして終わるのではなく、次へ向かう短い音とみなす（拍） */
+const LEAD_OUT_MAX_BEATS = 0.5;
+
+/**
+ * 次の小節へつなぐ形で終わるリズムか。半小節の終わり際を、短い音で締めているもの。
+ * 小節の後半がこの形なら、次の小節は頭から鳴らして受け止める（つないだ先が休みだと肩透かしになる）。
+ */
+export function leadsOut(rhythm: Rhythm): boolean {
+  const last = rhythm.hits.at(-1);
+  return last !== undefined && last.dur <= LEAD_OUT_MAX_BEATS && last.at + last.dur >= HALF_BAR_BEATS - 0.05;
+}
+
+/** 小節の前半で、遅れて入るリズムと休みに掛ける倍率 */
+const LATE_ENTRY_FACTOR = 0.6;
+const REST_FACTOR = 0.4;
+
+/**
+ * 小節の頭から鳴るリズムを選ばれやすくする。前半のリズムにだけ使う。
+ * Jevは間のあるリズムを好み、実測では小節の頭で音が鳴るのは34〜47%だった。頭が抜けて聞こえるので偏りを直す。
+ */
+export function favorDownbeat(probabilities: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => {
+      const first = RHYTHMS_BY_ID.get(id)?.hits[0];
+      const factor = first === undefined ? REST_FACTOR : first.at > 0 ? LATE_ENTRY_FACTOR : 1;
+      return [id, probability * factor];
+    }),
   );
 }

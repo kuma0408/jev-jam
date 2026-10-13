@@ -40,6 +40,9 @@ const PHRASE_GAP_BEATS = 0.5;
 const SHAPE_MIN_SECONDS = 0.5;
 const VIBRATO_MIN_SECONDS = 0.6;
 const FALL_MIN_SECONDS = 0.35;
+const BEATS_PER_BAR = 4;
+/** 小節の終わりまでこれ以内に迫る音は、次の小節へ持ち越すかもしれない音として扱う（拍） */
+const BAR_END_MARGIN_BEATS = 0.05;
 const FALL_CHANCE = 0.35;
 
 const TONGUED_ATTACK = 0.012;
@@ -80,7 +83,9 @@ export function planExpression(
     const scoop = seconds >= SCOOP_MIN_SECONDS && (entering || leaping) && random() < SCOOP_CHANCE;
 
     const ending = gapAfter >= PHRASE_GAP_BEATS;
-    const fall = seconds >= FALL_MIN_SECONDS && ending && random() < FALL_CHANCE;
+    // 小節の終わりまで伸びる音は、次の小節へ持ち越すかもしれないので落とさない
+    const reachesBarEnd = note.startBeats + note.durationBeats >= BEATS_PER_BAR - BAR_END_MARGIN_BEATS;
+    const fall = seconds >= FALL_MIN_SECONDS && ending && !reachesBarEnd && random() < FALL_CHANCE;
 
     const slurred =
       previous !== undefined && gapBefore < SLUR_GAP_BEATS && Math.abs(note.pitch - previous.pitch) <= SLUR_INTERVAL;
@@ -101,6 +106,8 @@ const STEP_SECONDS = 0.01;
 /** ビブラートは音の後半から。伸ばしてから揺らすのがジャズのサックスらしい */
 const VIBRATO_START = 0.4;
 const VIBRATO_FADE_IN_SECONDS = 0.15;
+/** 音の終わりのこの秒数で揺れを収め、目的の音程に戻す */
+const VIBRATO_FADE_OUT_SECONDS = 0.12;
 const VIBRATO_DEPTH_SEMITONES = 0.22;
 const VIBRATO_RATE_HZ = 5.2;
 /** フォールは音の終わりの3割で、この半音数だけ落とす */
@@ -167,7 +174,10 @@ export function renderExpression(expression: NoteExpression, seconds: number): {
       offset = -FALL_DEPTH_SEMITONES * falling ** 2;
     } else if (expression.vibrato && time >= vibratoFrom) {
       const since = time - vibratoFrom;
-      const depth = VIBRATO_DEPTH_SEMITONES * Math.min(1, since / VIBRATO_FADE_IN_SECONDS);
+      const depth =
+        VIBRATO_DEPTH_SEMITONES *
+        Math.min(1, since / VIBRATO_FADE_IN_SECONDS) *
+        Math.min(1, (seconds - time) / VIBRATO_FADE_OUT_SECONDS);
       offset = depth * Math.sin(2 * Math.PI * VIBRATO_RATE_HZ * since);
     }
     pitch.push(offset);

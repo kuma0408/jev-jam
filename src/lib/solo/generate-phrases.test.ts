@@ -303,6 +303,14 @@ describe("generatePhraseBars（小節の頭に着地する）", () => {
     expect(starts.every((at) => at === 0)).toBe(true);
   });
 
+  it("着地が必要なときは、遅れて入るリズムを前の小節から引き継がない", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "develop-rhythm" });
+    // 前半は遅れて入るリズム、後半は次へつなぐ形
+    const leading = { chord: "Cmaj7", cells: ["r-offbeat-long", "c-arch", "r-pickup-two", "c-rise-from-fifth"] };
+    const [bar] = await generatePhraseBars(client, { ...input, memo: { history: [leading] } });
+    expect(bar!.memo.cells![0]).toBe("r-four-eighths");
+  });
+
   it("前の小節が伸ばして終わったなら、休みや遅れて入るリズムも選択肢に残す", async () => {
     const { client, calls } = scriptedClient(picks);
     const settled = { chord: "Cmaj7", cells: ["r-half", "c-arch", "r-half", "c-fall-from-fifth"] };

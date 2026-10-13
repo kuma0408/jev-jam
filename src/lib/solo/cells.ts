@@ -15,6 +15,8 @@ export type CellNote = {
   alt?: number;
   /** ghost: 飲み込むように弱く / accent: 強く */
   accent?: "ghost" | "accent";
+  /** true なら、前の小節の最後の音を持ち越して伸ばす。新しく発音せず、高さも前の音のまま（step は使わない） */
+  tie?: boolean;
 };
 
 export type Cell = {

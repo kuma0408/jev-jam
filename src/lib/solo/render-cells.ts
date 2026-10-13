@@ -51,8 +51,10 @@ function pitchOf(note: CellNote, rootPitch: number, scale: readonly number[]): n
  * 最初の音が基準の音に最も近くなるオクターブを選び、型全体が音域からはみ出すならオクターブ単位でずらす。
  */
 function chooseRootPitch(cell: Cell, rootPitchClass: number, scale: readonly number[], reference: number, low: number, high: number): number {
-  const offsets = cell.notes.map((note) => pitchOf(note, 0, scale));
-  const first = offsets[0]!;
+  // 持ち越しの音は高さが決まっているので、ルートの高さを決める材料から外す
+  const offsets = cell.notes.filter((note) => !note.tie).map((note) => pitchOf(note, 0, scale));
+  const first = offsets[0];
+  if (first === undefined) return rootPitchClass;
   let rootPitch = rootPitchClass + 12 * Math.round((reference - first - rootPitchClass) / 12);
 
   const highest = Math.max(...offsets);
@@ -87,13 +89,15 @@ export function renderCells(cells: readonly [Cell, Cell], chord: string, options
     const rootPitch = chooseRootPitch(cell, root, scale, reference, options.low, options.high);
     for (const note of cell.notes) {
       const startBeats = half * BEATS_PER_CELL + note.at;
-      const pitch = pitchOf(note, rootPitch, scale);
+      // 持ち越しの音は、直前の音の高さのまま伸ばす
+      const pitch = note.tie ? options.previousPitch : pitchOf(note, rootPitch, scale);
       notes.push({
         pitch,
         startBeats,
         durationBeats: note.dur,
         velocity: velocityOf(note, startBeats, options),
         swing: !cell.straight,
+        ...(note.tie ? { tie: true } : {}),
       });
       reference = pitch;
     }

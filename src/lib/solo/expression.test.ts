@@ -154,6 +154,11 @@ describe("renderExpression（1音の中の、音程と音量の動き）", () =>
     expect(Math.max(...pitch.map(Math.abs))).toBeLessThan(0.34);
   });
 
+  it("ビブラートは音の終わりで収まり、目的の音程に戻る（次の小節へ持ち越しても音程がずれない）", () => {
+    const pitch = pitchOf({ ...plain, vibrato: true }, 2);
+    expect(pitch.at(-1)).toBeCloseTo(0, 5);
+  });
+
   it("フォールは、音の終わりで音程が落ち、音量も絞られる", () => {
     const { pitch, gain } = renderExpression({ ...plain, fall: true }, 1);
     expect(pitch[50]).toBe(0);
