@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMP_PATTERNS, accompaniment } from "./accompaniment.ts";
+import { COMP_PATTERNS, accompaniment, bassApproach } from "./accompaniment.ts";
 
 const first = () => 0;
 const partOf = (chord: string, part: string, options: Parameters<typeof accompaniment>[1] = { bar: 1 }) =>
@@ -51,6 +51,51 @@ describe("accompaniment", () => {
     });
   });
 
+  describe("ベース（最後の1拍を後から決める場合）", () => {
+    it("4拍目を省いて返せる", () => {
+      const bass = partOf("Dm7", "bass", { bar: 1, deferLastBass: true });
+      expect(bass.map((event) => event.startBeats)).toEqual([0, 1, 2]);
+    });
+
+    it("省いた4拍目の音は、次のコードが決まってから求められる", () => {
+      // G の半音下（F#）か半音上（Ab）
+      expect([6, 8]).toContain(bassApproach("Dm7", "G7") % 12);
+      // C の半音下（B）か半音上（Db）
+      expect([11, 1]).toContain(bassApproach("Dm7", "Cmaj7") % 12);
+      expect(bassApproach("Dm7", "G7")).toBeGreaterThanOrEqual(28);
+      expect(bassApproach("Dm7", "G7")).toBeLessThanOrEqual(52);
+    });
+  });
+
+  describe("盛り上がり", () => {
+    const count = (part: string, energy: 1 | 2 | 3 | 4) => {
+      let total = 0;
+      for (let index = 0; index < 20; index++) {
+        total += accompaniment("Dm7", { bar: 1, energy }, () => (index + 0.5) / 20).filter((event) => event.part === part).length;
+      }
+      return total;
+    };
+
+    it("静かなときは、ベースは2分音符で2つだけ弾く", () => {
+      const bass = partOf("Dm7", "bass", { bar: 1, energy: 1 });
+      expect(bass.map((event) => event.startBeats)).toEqual([0, 2]);
+    });
+
+    it("激しいほどコード伴奏の手数が増える", () => {
+      expect(count("comp", 4)).toBeGreaterThan(count("comp", 1));
+    });
+
+    it("激しいほどシンバルを強く叩く", () => {
+      const loudness = (energy: 1 | 2 | 3 | 4) =>
+        partOf("Dm7", "ride", { bar: 1, energy }).reduce((sum, event) => sum + event.velocity, 0);
+      expect(loudness(4)).toBeGreaterThan(loudness(1));
+    });
+
+    it("指定が無ければ、中くらい（歩くベース）にする", () => {
+      expect(partOf("Dm7", "bass").map((event) => event.startBeats)).toEqual([0, 1, 2, 3]);
+    });
+  });
+
   describe("コード伴奏", () => {
     it("ルートを省いた構成音を、中音域で鳴らす", () => {
       for (const event of partOf("Dm7", "comp")) {
@@ -70,12 +115,12 @@ describe("accompaniment", () => {
           .filter((event) => event.part === "comp")
           .map((event) => event.startBeats)
           .join(",");
-      const variants = new Set(COMP_PATTERNS.map((_, index) => starts(() => (index + 0.5) / COMP_PATTERNS.length)));
-      expect(variants.size).toBe(COMP_PATTERNS.length);
+      const variants = new Set(Array.from({ length: 40 }, (_, index) => starts(() => (index + 0.5) / 40)));
+      expect(variants.size).toBeGreaterThanOrEqual(3);
     });
 
     it("裏拍から入る型がある", () => {
-      const hasOffbeat = COMP_PATTERNS.some((pattern) => pattern.some((hit) => hit.at % 1 === 0.5));
+      const hasOffbeat = COMP_PATTERNS.some((pattern) => pattern.hits.some((hit) => hit.at % 1 === 0.5));
       expect(hasOffbeat).toBe(true);
     });
   });
