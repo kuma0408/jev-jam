@@ -458,6 +458,53 @@ describe("generatePhraseBars（4小節の形と高さの流れ）", () => {
   });
 });
 
+describe("generatePhraseBars（16分音符で走り続ける）", () => {
+  /** 2つの選択肢に同じ確率を置くクライアント。抽選は乱数で決まる */
+  function evenClient(ids: Record<string, string[]>) {
+    const client: DecisionClient = {
+      name: "fake",
+      async decide(_state, questions) {
+        const answers: Record<string, ChoiceAnswer> = {};
+        for (const [id, question] of Object.entries(questions)) {
+          const options = ids[id] ?? [Object.keys(question.criteria)[0]!];
+          answers[id] = { choice: options[0]!, probabilities: Object.fromEntries(options.map((option) => [option, 1 / options.length])) };
+        }
+        return answers;
+      },
+    };
+    return client;
+  }
+  const slow = { ...input, bpm: 72, barInPhrase: 1, memo: { shape: "p-relentless", arc: "a-middle" } };
+  const choices = { rhythm_first_0: ["r-two-quarters"], rhythm_second_0: ["r-two-quarters", "r-sixteenth-run"] };
+  /** 後半で走るリズムが選ばれた割合 */
+  const runRate = async (first: string) => {
+    let runs = 0;
+    for (let i = 0; i < 200; i++) {
+      const [bar] = await generatePhraseBars(evenClient({ ...choices, rhythm_first_0: [first] }), slow);
+      if (bar!.memo.cells![2] === "r-sixteenth-run") runs++;
+    }
+    return runs / 200;
+  };
+
+  it("前半が走っていたら、後半も走るリズムが選ばれやすい（1小節まるごと走る）", async () => {
+    expect(await runRate("r-sixteenth-run")).toBeGreaterThan((await runRate("r-two-quarters")) + 0.15);
+  });
+
+  it("前の小節の後半が走っていたら、この小節の前半も走るリズムが選ばれやすい（小節をまたいで走る）", async () => {
+    const rate = async (previousSecond: string) => {
+      let runs = 0;
+      const history = [{ chord: "Cmaj7", cells: ["r-two-quarters", "c-arch", previousSecond, "c-rise-from-third"] }];
+      for (let i = 0; i < 200; i++) {
+        const client = evenClient({ rhythm_first_0: ["r-two-quarters", "r-sixteenth-run"], relation: ["contrast"] });
+        const [bar] = await generatePhraseBars(client, { ...slow, memo: { ...slow.memo, history } });
+        if (bar!.memo.cells![0] === "r-sixteenth-run") runs++;
+      }
+      return runs / 200;
+    };
+    expect(await rate("r-sixteenth-run")).toBeGreaterThan((await rate("r-half")) + 0.15);
+  });
+});
+
 describe("penalizeRecent", () => {
   it("直前に使ったものの確率を下げて、同じフレーズの繰り返しを減らす", () => {
     const adjusted = penalizeRecent({ "c-arch": 0.5, "c-valley": 0.5 }, ["c-arch"]);

@@ -44,6 +44,10 @@ describe("biasShapesByEnergy", () => {
     expect(density(2)).toBeGreaterThan(density(1));
   });
 
+  it("盛り上がりが「ゆったり」でも、平均して4小節のうち6か所以上は吹く（無音が多すぎた）", () => {
+    expect(density(2)).toBeGreaterThanOrEqual(5.8);
+  });
+
   it("どの形の確率も0にはしない", () => {
     for (const value of Object.values(biasShapesByEnergy(uniform, 1))) {
       expect(value).toBeGreaterThan(0);

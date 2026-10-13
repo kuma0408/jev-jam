@@ -4,7 +4,9 @@ import {
   TIE_RHYTHMS,
   boostSixteenths,
   favorDownbeat,
+  holdBackLongNotes,
   holdBackTies,
+  keepRunning,
   leadsOut,
   rhythmById,
   rhythmsFor,
@@ -123,24 +125,81 @@ describe("16分音符のリズム", () => {
   });
 });
 
-describe("boostSixteenths（16分音符を選ばれやすくする）", () => {
-  const uniform = (bpm: number) => Object.fromEntries(rhythmsFor(bpm).map((rhythm) => [rhythm.id, 1]));
-  const share = (odds: Record<string, number>) => {
-    const total = Object.values(odds).reduce((sum, value) => sum + value, 0);
-    const marked = RHYTHMS.filter((rhythm) => rhythm.sixteenths).reduce((sum, rhythm) => sum + (odds[rhythm.id] ?? 0), 0);
-    return marked / total;
-  };
+describe("16分音符で走るリズム", () => {
+  const runs = RHYTHMS.filter((rhythm) => rhythm.run);
 
-  it("遅いテンポでは、16分音符のリズムの取り分を大きく増やす", () => {
-    expect(share(boostSixteenths(uniform(70), 70))).toBeGreaterThan(share(uniform(70)) * 1.4);
+  it("半小節を16分音符でほぼ埋めるリズムに印が付いている", () => {
+    expect(runs.length).toBeGreaterThanOrEqual(3);
+    for (const rhythm of runs) {
+      expect(rhythm.sixteenths).toBe(true);
+      expect(rhythm.hits.length).toBeGreaterThanOrEqual(6);
+    }
   });
 
-  it("中間のテンポでも少し増やす", () => {
-    expect(share(boostSixteenths(uniform(130), 130))).toBeGreaterThan(share(uniform(130)));
+  it("長い音に3〜4個の16分音符を添えるだけのリズムには、印を付けない", () => {
+    expect(rhythmById("r-long-sixteenth-pickup").run).toBeFalsy();
+    expect(rhythmById("r-late-sixteenth-four").run).toBeFalsy();
+  });
+
+  it("盛り上がりが中くらいでも選ばれるよう、音数の段階は最大にしない", () => {
+    for (const rhythm of runs) {
+      expect(rhythm.energy).toBeLessThanOrEqual(3);
+    }
+  });
+});
+
+describe("boostSixteenths（16分音符のメリハリを付ける）", () => {
+  const uniform = (bpm: number) => Object.fromEntries(rhythmsFor(bpm).map((rhythm) => [rhythm.id, 1]));
+  const shareOf = (odds: Record<string, number>, pick: (rhythm: (typeof RHYTHMS)[number]) => boolean) => {
+    const total = Object.values(odds).reduce((sum, value) => sum + value, 0);
+    return RHYTHMS.filter(pick).reduce((sum, rhythm) => sum + (odds[rhythm.id] ?? 0), 0) / total;
+  };
+  const isRun = (rhythm: (typeof RHYTHMS)[number]) => rhythm.run === true;
+  const isSnippet = (rhythm: (typeof RHYTHMS)[number]) => rhythm.sixteenths === true && !rhythm.run;
+
+  it("遅いテンポでは、走るリズムの取り分を大きく増やす", () => {
+    expect(shareOf(boostSixteenths(uniform(70), 70), isRun)).toBeGreaterThan(shareOf(uniform(70), isRun) * 1.8);
+  });
+
+  it("3〜4個だけ16分音符が入るリズムの取り分は減らす（ぱらぱら入るより、走るか伸ばすか）", () => {
+    expect(shareOf(boostSixteenths(uniform(70), 70), isSnippet)).toBeLessThan(shareOf(uniform(70), isSnippet));
   });
 
   it("16分音符以外のリズムの確率は変えない", () => {
     expect(boostSixteenths({ "r-half": 0.3, "r-rest": 0.2 }, 70)).toEqual({ "r-half": 0.3, "r-rest": 0.2 });
+  });
+});
+
+describe("keepRunning（走り出したら、しばらく走り続ける）", () => {
+  const odds = { "r-sixteenth-run": 0.1, "r-half": 0.1, "r-rest": 0.1 };
+
+  it("直前の半小節が走っていたら、走るリズムを強く選ばれやすくする", () => {
+    const adjusted = keepRunning(odds, 1);
+    expect(adjusted["r-sixteenth-run"]).toBeGreaterThan(0.3);
+    expect(adjusted["r-half"]).toBe(0.1);
+  });
+
+  it("走っていなければ、何も変えない", () => {
+    expect(keepRunning(odds, 0)).toEqual(odds);
+  });
+
+  it("2小節（半小節4つ）走り続けたら、今度は止まりやすくする", () => {
+    expect(keepRunning(odds, 4)["r-sixteenth-run"]).toBeLessThan(0.1);
+  });
+});
+
+describe("holdBackLongNotes（伸ばすだけのリズムを選ばれにくくする）", () => {
+  it("1音を長く伸ばすだけのリズムの確率を下げる", () => {
+    const adjusted = holdBackLongNotes({ "r-whole": 1, "r-half": 1, "r-offbeat-long": 1, "r-late-long": 1, "r-four-eighths": 1 });
+    expect(adjusted["r-whole"]).toBeLessThan(1);
+    expect(adjusted["r-half"]).toBeLessThan(1);
+    expect(adjusted["r-offbeat-long"]).toBeLessThan(1);
+    expect(adjusted["r-late-long"]).toBeLessThan(1);
+    expect(adjusted["r-four-eighths"]).toBe(1);
+  });
+
+  it("確率を0にはしない（伸ばす音も残す）", () => {
+    expect(holdBackLongNotes({ "r-whole": 1 })["r-whole"]).toBeGreaterThan(0);
   });
 });
 
