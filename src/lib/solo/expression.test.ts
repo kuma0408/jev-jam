@@ -66,8 +66,13 @@ describe("planExpression: ビブラートとフォール", () => {
   it("フレーズの最後の長い音は、音程を落として消えることがある", () => {
     // 次の音まで1拍空く
     expect(plan([note(62, 0, 1), note(64, 2, 1)])[0]!.fall).toBe(true);
-    // 小節の最後の音
-    expect(plan([note(62, 3, 1)])[0]!.fall).toBe(true);
+    // この小節で最後の音。小節の終わりより手前で終わる
+    expect(plan([note(62, 2, 1)])[0]!.fall).toBe(true);
+  });
+
+  it("小節の終わりまで伸びる音は落とさない（次の小節へ持ち越すかもしれない）", () => {
+    expect(plan([note(62, 3, 1)])[0]!.fall).toBe(false);
+    expect(plan([note(62, 0, 4)])[0]!.fall).toBe(false);
   });
 
   it("次の音へすぐつながる音や、短い音は落とさない", () => {
@@ -76,7 +81,7 @@ describe("planExpression: ビブラートとフォール", () => {
   });
 
   it("毎回は落とさない", () => {
-    expect(plan([note(62, 3, 1)], never)[0]!.fall).toBe(false);
+    expect(plan([note(62, 2, 1)], never)[0]!.fall).toBe(false);
   });
 });
 

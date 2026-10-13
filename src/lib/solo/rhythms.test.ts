@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RHYTHMS, boostSixteenths, rhythmById, rhythmsFor, tempoBand } from "./rhythms.ts";
+import { RHYTHMS, TIE_RHYTHMS, boostSixteenths, favorDownbeat, leadsOut, rhythmById, rhythmsFor, tempoBand } from "./rhythms.ts";
 
 describe("tempoBand", () => {
   it("テンポを遅い・中間・速いの3つの帯に分ける", () => {
@@ -131,5 +131,60 @@ describe("boostSixteenths（16分音符を選ばれやすくする）", () => {
 
   it("16分音符以外のリズムの確率は変えない", () => {
     expect(boostSixteenths({ "r-half": 0.3, "r-rest": 0.2 }, 70)).toEqual({ "r-half": 0.3, "r-rest": 0.2 });
+  });
+});
+
+describe("TIE_RHYTHMS（前の小節の音を持ち越して伸ばすリズム）", () => {
+  it("最初の音が持ち越しで、小節の頭から始まる", () => {
+    expect(TIE_RHYTHMS.length).toBeGreaterThanOrEqual(3);
+    for (const rhythm of TIE_RHYTHMS) {
+      expect(rhythm.id).toMatch(/^r-tie-[a-z0-9-]{1,33}$/);
+      expect(rhythm.hits[0]).toMatchObject({ at: 0, tie: true });
+      expect(rhythm.hits.slice(1).every((hit) => !hit.tie)).toBe(true);
+      expect(rhythm.description).toMatch(/^[\x20-\x7e]{10,}$/);
+    }
+  });
+
+  it("ふだんの選択肢には入れない（持ち越せるときだけ別に出す）", () => {
+    for (const bpm of [70, 130, 220]) {
+      expect(rhythmsFor(bpm).some((rhythm) => rhythm.hits.some((hit) => hit.tie))).toBe(false);
+    }
+  });
+
+  it("IDから引ける", () => {
+    expect(rhythmById(TIE_RHYTHMS[0]!.id)).toBe(TIE_RHYTHMS[0]);
+  });
+});
+
+describe("leadsOut（次の小節へつなぐ形で終わるリズムか）", () => {
+  it("終わり際の短い音で終わるリズムは、次へつなぐ形とみなす", () => {
+    expect(leadsOut(rhythmById("r-pickup-two"))).toBe(true);
+    expect(leadsOut(rhythmById("r-tied-push"))).toBe(true);
+    expect(leadsOut(rhythmById("r-four-eighths"))).toBe(true);
+  });
+
+  it("伸ばして終わるリズムや、途中で終わるリズム、休みは違う", () => {
+    expect(leadsOut(rhythmById("r-half"))).toBe(false);
+    expect(leadsOut(rhythmById("r-two-quarters"))).toBe(false);
+    expect(leadsOut(rhythmById("r-three-eighths"))).toBe(false);
+    expect(leadsOut(rhythmById("r-rest"))).toBe(false);
+  });
+});
+
+describe("favorDownbeat（小節の頭から鳴るリズムを選ばれやすくする）", () => {
+  const odds = { "r-half": 1, "r-offbeat-long": 1, "r-late-long": 1, "r-rest": 1 };
+
+  it("遅れて入るリズムと休みの確率を下げ、頭から鳴るリズムは変えない", () => {
+    const adjusted = favorDownbeat(odds);
+    expect(adjusted["r-half"]).toBe(1);
+    expect(adjusted["r-offbeat-long"]).toBeLessThan(1);
+    expect(adjusted["r-late-long"]).toBeLessThan(1);
+    expect(adjusted["r-rest"]).toBeLessThan(adjusted["r-offbeat-long"]!);
+  });
+
+  it("確率を0にはしない（遅れて入る吹き方も残す）", () => {
+    for (const value of Object.values(favorDownbeat(odds))) {
+      expect(value).toBeGreaterThan(0);
+    }
   });
 });

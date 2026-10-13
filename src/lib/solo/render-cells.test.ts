@@ -140,6 +140,19 @@ describe("renderCells", () => {
     expect(notes[0]!.startBeats + notes[0]!.durationBeats).toBe(4);
   });
 
+  it("持ち越しの音は、直前の音と同じ高さにして印を付ける", () => {
+    const tie = cell([
+      { at: 0, dur: 1, step: 0, tie: true },
+      { at: 1, dur: 0.5, step: 2 },
+    ]);
+    // 直前の音は E4(64)。Dm7 のスケールの音で、段の指定（ルート）とは違う
+    const notes = renderCells([tie, REST], "Dm7", { previousPitch: 64, ...range, ...plain });
+    expect(notes[0]).toMatchObject({ pitch: 64, startBeats: 0, durationBeats: 1, tie: true });
+    // 続く音は、持ち越した音の近くから始める（3rd の F4）
+    expect(notes[1]).toMatchObject({ pitch: 65 });
+    expect(notes[1]!.tie).toBeUndefined();
+  });
+
   it("休む型だけなら音を返さない", () => {
     expect(renderCells([REST, REST], "Dm7", { previousPitch: 62, ...range, ...plain })).toEqual([]);
   });

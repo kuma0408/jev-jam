@@ -241,6 +241,78 @@ describe("generatePhraseBars（これまでの流れを踏まえる）", () => {
   });
 });
 
+describe("generatePhraseBars（小節をまたいで音を伸ばす）", () => {
+  const tieIds = (criteria: Record<string, string>) => Object.keys(criteria).filter((id) => id.startsWith("r-tie-"));
+  // 直前の音は F4(65)。小節の終わりまで鳴っている
+  const sustained = { ...input, previousPitch: 65, sustained: true };
+
+  it("前の音が鳴り続けていなければ、持ち越しは選択肢に出さない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, { ...sustained, sustained: false });
+    expect(tieIds(calls[0]!.questions.rhythm_first_0!.criteria)).toEqual([]);
+  });
+
+  it("前の音が鳴り続けていて、次のコードに合うなら、持ち越しを選択肢に出す", async () => {
+    const { client, calls } = scriptedClient(picks);
+    // F は Dm7 の 3rd
+    await generatePhraseBars(client, sustained);
+    expect(tieIds(calls[0]!.questions.rhythm_first_0!.criteria).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("次のコードに合わない音は持ち越さない（そのコードでは選択肢に出さない）", async () => {
+    const { client, calls } = scriptedClient(picks);
+    // F は D7 のスケールに無い。Am7 では b13 で、ぶつかる音
+    await generatePhraseBars(client, { ...sustained, chords: ["Dm7", "D7", "Am7"] });
+    expect(tieIds(calls[0]!.questions.rhythm_first_0!.criteria).length).toBeGreaterThan(0);
+    expect(tieIds(calls[0]!.questions.rhythm_first_1!.criteria)).toEqual([]);
+    expect(tieIds(calls[0]!.questions.rhythm_first_2!.criteria)).toEqual([]);
+  });
+
+  it("後半のリズムには持ち越しを出さない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, sustained);
+    expect(tieIds(calls[1]!.questions.rhythm_second_0!.criteria)).toEqual([]);
+  });
+
+  it("持ち越しが選ばれたら、最初の音は直前の音と同じ高さで、持ち越しの印が付く", async () => {
+    const { client } = scriptedClient({ ...picks, rhythm_first_0: "r-tie-long" });
+    const [bar] = await generatePhraseBars(client, sustained);
+    expect(bar!.notes[0]).toMatchObject({ pitch: 65, startBeats: 0, durationBeats: 2, tie: true });
+    expect(bar!.summary).toBe("tie-long + rest");
+  });
+
+  it("前の音がまだ鳴っていることをJevに伝える", async () => {
+    const yes = scriptedClient(picks);
+    const no = scriptedClient(picks);
+    await generatePhraseBars(yes.client, sustained);
+    await generatePhraseBars(no.client, { ...sustained, sustained: false });
+    expect(String(yes.calls[0]!.state.still_sounding)).toMatch(/held|holding/i);
+    expect(no.calls[0]!.state.still_sounding).toBeUndefined();
+  });
+});
+
+describe("generatePhraseBars（小節の頭に着地する）", () => {
+  const startsOf = (criteria: Record<string, string>) => Object.keys(criteria).map((id) => rhythmById(id).hits[0]?.at);
+
+  it("前の小節が次へつなぐ形で終わったら、前半は頭から鳴るリズムだけを選択肢に出す", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const leading = { chord: "Cmaj7", cells: ["r-half", "c-arch", "r-pickup-two", "c-rise-from-fifth"] };
+    await generatePhraseBars(client, { ...input, memo: { history: [leading] } });
+    const starts = startsOf(calls[0]!.questions.rhythm_first_0!.criteria);
+    expect(starts.length).toBeGreaterThan(8);
+    expect(starts.every((at) => at === 0)).toBe(true);
+  });
+
+  it("前の小節が伸ばして終わったなら、休みや遅れて入るリズムも選択肢に残す", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const settled = { chord: "Cmaj7", cells: ["r-half", "c-arch", "r-half", "c-fall-from-fifth"] };
+    await generatePhraseBars(client, { ...input, memo: { history: [settled] } });
+    const ids = Object.keys(calls[0]!.questions.rhythm_first_0!.criteria);
+    expect(ids).toContain("r-rest");
+    expect(ids).toContain("r-offbeat-long");
+  });
+});
+
 describe("penalizeRecent", () => {
   it("直前に使ったものの確率を下げて、同じフレーズの繰り返しを減らす", () => {
     const adjusted = penalizeRecent({ "c-arch": 0.5, "c-valley": 0.5 }, ["c-arch"]);
