@@ -8,6 +8,12 @@ describe("fitsChord（その音を、このコードの上で伸ばしてよい�
     expect(fitsChord(64, "Dm7")).toBe(true); // 9th
   });
 
+  it("5thも伸ばしてよい（説明文に passing という語があるが、ぶつかる音ではない）", () => {
+    // A は Dm7 の 5th、G は Cmaj7 の 5th
+    expect(fitsChord(69, "Dm7")).toBe(true);
+    expect(fitsChord(67, "Cmaj7")).toBe(true);
+  });
+
   it("スケールに無い音はだめ", () => {
     expect(fitsChord(65, "D7")).toBe(false);
   });

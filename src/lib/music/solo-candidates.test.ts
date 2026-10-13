@@ -69,6 +69,16 @@ describe("soloCandidates", () => {
     expect(avoid("Am7", "b13th")).toMatch(/passing/);
   });
 
+  it("響きがぶつかる音には印を付け、構成音には付けない", () => {
+    const avoided = (chord: string) => soloCandidates(chord).filter((c) => c.avoid).map((c) => c.degree);
+    expect(avoided("Cmaj7")).toEqual(["11th"]);
+    expect(avoided("Em7")).toEqual(["b9th", "b13th"]);
+    expect(avoided("Dm7")).toEqual([]);
+    for (const chord of ["Cmaj7", "Dm7", "G7", "Em7", "Am7"]) {
+      expect(soloCandidates(chord).some((c) => c.kind === "chord-tone" && c.avoid)).toBe(false);
+    }
+  });
+
   it("Jevに渡す英語の説明を全候補に付ける", () => {
     for (const candidate of soloCandidates("Dm7")) {
       expect(candidate.description).toMatch(/^[\x20-\x7e]+$/);
