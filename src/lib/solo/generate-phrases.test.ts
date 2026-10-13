@@ -30,6 +30,9 @@ const picks = {
   contour_second_0: "c-fall-from-fifth",
   dynamics: "loud",
   shape: "crescendo",
+  // 1小節目は「前半を吹き、後半を休む」形
+  phrase_shape: "p-build",
+  register_arc: "a-middle",
 };
 
 describe("generatePhraseBars", () => {
@@ -37,7 +40,14 @@ describe("generatePhraseBars", () => {
     const { client, calls } = scriptedClient(picks);
     const [bar] = await generatePhraseBars(client, input);
     expect(calls).toHaveLength(2);
-    expect(Object.keys(calls[0]!.questions)).toEqual(["rhythm_first_0", "contour_first_0", "dynamics", "shape"]);
+    expect(Object.keys(calls[0]!.questions)).toEqual([
+      "rhythm_first_0",
+      "contour_first_0",
+      "dynamics",
+      "shape",
+      "phrase_shape",
+      "register_arc",
+    ]);
     expect(Object.keys(calls[1]!.questions)).toEqual(["rhythm_second_0", "contour_second_0"]);
     expect(bar!.calls).toBe(2);
   });
@@ -113,11 +123,18 @@ describe("generatePhraseBars", () => {
     expect(bar!.details).toContain("loud");
     expect(bar!.details).toContain("crescendo");
     const cells = ["r-four-eighths", "c-arpeggio-up-root", "r-rest", "c-fall-from-fifth"];
-    expect(bar!.memo).toEqual({ cells, dynamics: "loud", history: [{ chord: "Dm7", cells }] });
+    expect(bar!.memo).toEqual({
+      cells,
+      dynamics: "loud",
+      history: [{ chord: "Dm7", cells }],
+      shape: "p-build",
+      arc: "a-middle",
+    });
   });
 
   it("小節まるごと休みなら、直前の音の高さを引き継ぐ", async () => {
-    const { client } = scriptedClient({ ...picks, rhythm_first_0: "r-rest" });
+    // 1小節目をまるごと休む形
+    const { client } = scriptedClient({ ...picks, rhythm_first_0: "r-rest", phrase_shape: "p-wait-then-answer" });
     const [bar] = await generatePhraseBars(client, input);
     expect(bar!.notes).toEqual([]);
     expect(bar!.lastPitch).toBe(62);
@@ -334,6 +351,83 @@ describe("generatePhraseBars（小節の頭に着地する）", () => {
     const ids = Object.keys(calls[0]!.questions.rhythm_first_0!.criteria);
     expect(ids).toContain("r-rest");
     expect(ids).toContain("r-offbeat-long");
+  });
+});
+
+describe("generatePhraseBars（4小節の形と高さの流れ）", () => {
+  const planned = { shape: "p-wait-then-answer", arc: "a-climb" };
+
+  it("4小節のまとまりの最初の小節でだけ、形と高さの流れをJevに選ばせる", async () => {
+    const first = scriptedClient(picks);
+    const later = scriptedClient(picks);
+    await generatePhraseBars(first.client, { ...input, barInPhrase: 0 });
+    await generatePhraseBars(later.client, { ...input, barInPhrase: 1, memo: planned });
+    expect(Object.keys(first.calls[0]!.questions)).toEqual(expect.arrayContaining(["phrase_shape", "register_arc"]));
+    expect(Object.keys(later.calls[0]!.questions)).not.toContain("phrase_shape");
+    expect(Object.keys(later.calls[0]!.questions)).not.toContain("register_arc");
+  });
+
+  it("選ばれた形と流れを、まとまりの終わりまで引き継ぐ", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, { ...input, barInPhrase: 2, memo: planned });
+    expect(bar!.memo).toMatchObject(planned);
+  });
+
+  it("形が「休む」としている場所では、Jevが何を選んでも休む", async () => {
+    // p-wait-then-answer は1小節目をまるごと休む
+    const { client } = scriptedClient({ ...picks, rhythm_second_0: "r-four-eighths" });
+    const [bar] = await generatePhraseBars(client, { ...input, barInPhrase: 0, memo: {} , ...{} });
+    expect(bar).toBeDefined();
+    const rested = scriptedClient({ ...picks, phrase_shape: "p-wait-then-answer", rhythm_second_0: "r-four-eighths" });
+    const [silent] = await generatePhraseBars(rested.client, { ...input, barInPhrase: 0 });
+    expect(silent!.notes).toEqual([]);
+  });
+
+  it("形が「吹く」としている場所では、Jevが休みを選んでも休まない", async () => {
+    // p-wait-then-answer の2小節目は、前半も後半も吹く
+    const { client } = scriptedClient({ ...picks, rhythm_first_0: "r-rest", rhythm_second_0: "r-rest" });
+    const [bar] = await generatePhraseBars(client, { ...input, barInPhrase: 1, memo: planned });
+    expect(bar!.memo.cells![0]).not.toBe("r-rest");
+    expect(bar!.memo.cells![2]).not.toBe("r-rest");
+    expect(bar!.notes.length).toBeGreaterThan(0);
+  });
+
+  it("次が休みの場所の直前では、次へつなぐ形で終わるリズムを選択肢に出さない", async () => {
+    // p-taper（xx x. x. ..）の2小節目: 後半は休み。前半は「吹く」で、その次が休み
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, { ...input, barInPhrase: 2, memo: { shape: "p-long-line", arc: "a-middle" } });
+    // p-long-line（xx xx x. ..）の3小節目: 前半は吹き、後半は休み。後半の質問は、休みに決まっているので何でもよい
+    const offered = Object.keys(calls[0]!.questions.rhythm_first_0!.criteria);
+    expect(offered).not.toContain("r-pickup-two");
+    expect(offered).not.toContain("r-four-eighths");
+    expect(offered).toContain("r-half");
+  });
+
+  it("高さの流れに沿って、小節ごとに音の高さが動く", async () => {
+    const mean = async (barInPhrase: number) => {
+      const { client } = scriptedClient(picks);
+      const [bar] = await generatePhraseBars(client, {
+        ...input,
+        previousPitch: 65,
+        barInPhrase,
+        memo: { shape: "p-relentless", arc: "a-climb" },
+      });
+      return bar!.notes.reduce((sum, note) => sum + note.pitch, 0) / bar!.notes.length;
+    };
+    expect(await mean(3)).toBeGreaterThan((await mean(0)) + 6);
+  });
+
+  it("形と流れを、画面用の補足に出す", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, { ...input, barInPhrase: 1, memo: planned });
+    expect(bar!.details).toContain("待ってから応える");
+    expect(bar!.details).toContain("登る");
+  });
+
+  it("形が決まっていなければ（途中から始まったときなど）、縛りを掛けない", async () => {
+    const { client } = scriptedClient({ ...picks, rhythm_first_0: "r-rest" });
+    const [bar] = await generatePhraseBars(client, { ...input, barInPhrase: 2, memo: {} });
+    expect(bar!.memo.cells![0]).toBe("r-rest");
   });
 });
 
