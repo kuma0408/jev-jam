@@ -7,7 +7,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "spike": "node --env-file-if-exists=.env spikes/jev-solo.ts"
   },
   "engines": {
     "node": ">=22.18"

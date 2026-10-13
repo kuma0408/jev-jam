@@ -17,3 +17,6 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# 検証スクリプトの出力
+spikes/out/
