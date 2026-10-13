@@ -1,0 +1,19 @@
+# 依存関係
+node_modules/
+
+# 秘密情報
+.env
+.env.*
+!.env.example
+
+# ビルド成果物
+.next/
+out/
+dist/
+coverage/
+
+# ログ・OS・エディタ
+*.log
+.DS_Store
+.vscode/
+.idea/
