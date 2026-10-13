@@ -9,6 +9,8 @@ export type ChordCandidate = {
 };
 
 export const MAX_CANDIDATES = 6;
+/** 選べる候補の最低数。1つしか無いと、ユーザーが曲を引っ張っている感覚が無くなる */
+export const MIN_CANDIDATES = 3;
 /** 一致の長さはここで頭打ちにする。長い進行に一度乗ると、そこから抜けられなくなるのを防ぐ */
 const MAX_MATCH_LENGTH = 4;
 const JAZZ_WEIGHT = 2;
@@ -20,7 +22,15 @@ export const KNOWN_CHORDS: readonly string[] = [...new Set(PROGRESSIONS.flatMap(
 // キー（Cメジャー）の中での遠さで冒険度を決める
 const DIATONIC = new Set(["Cmaj7", "Dm7", "Em7", "Fmaj7", "G7", "Am7"]);
 /** キーの中のコードへ向かう、セカンダリードミナントとその相方 */
-const SECONDARY = new Set(["A7", "E7", "C7", "Gm7"]);
+const SECONDARY = new Set(["A7", "E7", "C7", "D7", "Gm7"]);
+
+/** 定番の続きが足りないときに、この順で補う。どのコードからでも進める、キーの中の落ち着き先 */
+const FALLBACKS: readonly [chord: string, reason: string][] = [
+  ["Cmaj7", "トニックへ帰る"],
+  ["Dm7", "ツーファイブの入口へ"],
+  ["G7", "ドミナントへ"],
+  ["Am7", "平行調のトニックへ"],
+];
 
 function adventureOf(chord: string): ChordCandidate["adventure"] {
   return DIATONIC.has(chord) ? 1 : SECONDARY.has(chord) ? 2 : 3;
@@ -54,12 +64,16 @@ type Support = { length: number; weight: number; name: string };
  * よく使われる進行の一覧の中から、履歴の末尾と一致する箇所を探し、その「続き」を候補にする。
  * 長く一致する進行の続きほど上位に置くので、同じコードからでも、そこまでの流れで順位が変わる。
  * 先頭の候補が「選ばなかったときの既定」になる。
+ *
+ * 同じコードにとどまる候補を必ず入れ、それでも少なければキーの中の落ち着き先で補う。
  */
 export function nextChordCandidates(history: readonly string[]): ChordCandidate[] {
   const current = history.at(-1);
   if (current === undefined || !KNOWN_CHORDS.includes(current)) {
     throw new Error(`進行の一覧に無いコードです: ${current ?? "（履歴が空）"}`);
   }
+  // 同じコードにとどまった小節は1つにまとめ、とどまる前からの流れで照合する
+  const flow = history.filter((chord, index) => chord !== history[index - 1]);
 
   const supports = new Map<string, Support>();
   for (const progression of PROGRESSIONS) {
@@ -68,7 +82,7 @@ export function nextChordCandidates(history: readonly string[]): ChordCandidate[
       const next = chordAt(progression, position + 1);
       if (next === undefined) return;
 
-      const length = matchLength(progression, position, history);
+      const length = matchLength(progression, position, flow);
       const weight = progression.pop ? POP_WEIGHT : JAZZ_WEIGHT;
       const support = supports.get(next);
       if (!support) {
@@ -83,12 +97,23 @@ export function nextChordCandidates(history: readonly string[]): ChordCandidate[
     });
   }
 
-  return [...supports.entries()]
+  const candidates: ChordCandidate[] = [...supports.entries()]
     .map(([chord, support]) => ({ chord, support, adventure: adventureOf(chord) }))
     .sort(
       (a, b) =>
         b.support.length - a.support.length || b.support.weight - a.support.weight || a.adventure - b.adventure,
     )
-    .slice(0, MAX_CANDIDATES)
+    // 最後の1枠は「とどまる」のために空けておく
+    .slice(0, MAX_CANDIDATES - 1)
     .map(({ chord, support, adventure }) => ({ chord, adventure, reason: `「${support.name}」の続き` }));
+
+  candidates.push({ chord: current, adventure: 1, reason: "同じコードにもう1小節とどまる" });
+
+  for (const [chord, reason] of FALLBACKS) {
+    if (candidates.length >= MIN_CANDIDATES) break;
+    if (!candidates.some((candidate) => candidate.chord === chord)) {
+      candidates.push({ chord, adventure: 2, reason });
+    }
+  }
+  return candidates;
 }

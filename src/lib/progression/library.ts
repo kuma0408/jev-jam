@@ -34,4 +34,12 @@ export const PROGRESSIONS: readonly Progression[] = [
   { name: "I-IVの往復", chords: ["Cmaj7", "Fmaj7"], loop: true, pop: true },
   { name: "I-III7-VI", chords: ["Cmaj7", "E7", "Am7"] },
   { name: "偽終止", chords: ["Dm7", "G7", "Am7"] },
+  // ここから下は、続きが1通りしか無いコードに別の道を作るために足した進行
+  { name: "ドミナントの連鎖", chords: ["E7", "A7", "D7", "G7", "Cmaj7"] },
+  { name: "III7からIVへの偽終止", chords: ["E7", "Fmaj7"] },
+  { name: "IVへの裏コード", chords: ["Gm7", "Gb7", "Fmaj7"] },
+  { name: "I7からIVmへ", chords: ["C7", "Fm7", "Bb7"] },
+  { name: "bVII7からVIへ", chords: ["Bb7", "Am7"] },
+  { name: "bIIIからツーファイブへ", chords: ["Ebmaj7", "Dm7", "G7"] },
+  { name: "裏コードからの偽終止", chords: ["Db7", "Am7"] },
 ];
