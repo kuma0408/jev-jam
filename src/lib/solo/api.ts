@@ -1,4 +1,5 @@
 // 画面と中継API（/api/solo）の間でやり取りする型
+import type { CallSummary } from "./call.ts";
 import type { Cell } from "./cells.ts";
 import type { Energy, Touch } from "./energy.ts";
 import type { SlotChoice } from "./phrase.ts";
@@ -47,9 +48,18 @@ export type SoloMemo = {
   pastShapes?: string[];
   /** cells の方式: これまでのまとまりで使った高さの流れのID（新しい順、3つまで） */
   pastArcs?: string[];
+  /** 掛け合い: 応えの1小節目で選ばれた応え方と、その音数（盛り上がり）。応えの2小節目へ引き継ぐ */
+  reply?: { id: string; energy: Energy };
   /** 1音ずつの方式: スロットごとの選択 */
   choices?: SlotChoice[];
 };
+
+/**
+ * 掛け合い（ユーザーと2小節ずつ交代で弾く）での、これから作る小節の役割。
+ * answer: 応えの1小節目。call は相手が弾いた内容（何も弾かなかったら null）
+ * close: 応えの2小節目。次は相手の番なので、締めくくる
+ */
+export type Trade = { part: "answer" | "close"; call: CallSummary | null };
 
 /** 1小節ぶんのソロ */
 export type SoloBar = {
@@ -71,6 +81,8 @@ export type SoloBar = {
    * 1音ずつ選ぶ方式には無い
    */
   plan?: { cells: [Cell, Cell]; render: RenderOptions };
+  /** 掛け合いで、相手のフレーズにどう応えるかをJevが選んだ結果。odds はJevが返した確率 */
+  reply?: { id: string; label: string; odds: Record<string, number> };
 };
 
 export type SoloRequest = {
@@ -97,6 +109,8 @@ export type SoloRequest = {
    * 本番（NODE_ENV=production）では無視する
    */
   mock?: boolean;
+  /** 掛け合いでの役割。掛け合いでなければ省く */
+  trade?: Trade;
   memo: SoloMemo;
 };
 

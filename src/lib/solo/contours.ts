@@ -337,3 +337,38 @@ export function favorLeaps(probabilities: Record<string, number>): Record<string
     }),
   );
 }
+
+/** 相手の動きに寄せるとき、合う動きに掛ける倍率 */
+const DIRECTION_MATCH_FACTOR = 3;
+/** 相手の動きに寄せるとき、逆向きの動きに掛ける倍率 */
+const DIRECTION_OPPOSITE_FACTOR = 0.3;
+/** 最初と最後がこの段数以上離れていれば、上がる・下がる動きと見なす */
+const DIRECTION_STEPS = 2;
+
+/** 動きの向き。4音ぶんで見て、上がるか、下がるか、同じあたりにとどまるか、それ以外か */
+function directionOf(contour: Contour): "rising" | "falling" | "level" | "wavy" {
+  const steps = contour.notes(4).map((note) => note.step);
+  const travel = steps.at(-1)! - steps[0]!;
+  if (Math.max(...steps) - Math.min(...steps) <= 1) return "level";
+  return travel >= DIRECTION_STEPS ? "rising" : travel <= -DIRECTION_STEPS ? "falling" : "wavy";
+}
+
+/**
+ * 音の動きの確率を、指定した向きへ寄せる。掛け合いで、相手のフレーズの向きを真似たり、逆へ返したりするのに使う。
+ * 「波」には寄せない（上下する動きは種類が多く、寄せる先が定まらない）
+ */
+export function biasByDirection(
+  probabilities: Record<string, number>,
+  direction: "rising" | "falling" | "level" | "wavy",
+): Record<string, number> {
+  if (direction === "wavy") return probabilities;
+  const opposite = direction === "rising" ? "falling" : direction === "falling" ? "rising" : null;
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => {
+      const contour = CONTOURS_BY_ID.get(id);
+      if (!contour) return [id, probability];
+      const own = directionOf(contour);
+      return [id, probability * (own === direction ? DIRECTION_MATCH_FACTOR : own === opposite ? DIRECTION_OPPOSITE_FACTOR : 1)];
+    }),
+  );
+}

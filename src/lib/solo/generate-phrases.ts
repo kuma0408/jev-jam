@@ -1,9 +1,10 @@
 import type { DecisionClient } from "../jev/client.ts";
 import { sampleFromDistribution } from "../music/sample.ts";
 import { aimPitch, fitsChord } from "./aim.ts";
-import type { SoloBar, SoloMemo } from "./api.ts";
+import type { SoloBar, SoloMemo, Trade } from "./api.ts";
+import { REPLIES, type ReplyId, describeCall, replyEnergy } from "./call.ts";
 import type { Cell } from "./cells.ts";
-import { CONTOURS, type Contour, contourById, favorLeaps } from "./contours.ts";
+import { CONTOURS, type Contour, biasByDirection, contourById, favorLeaps } from "./contours.ts";
 import { ENERGY, type Energy, TOUCH_CUE, type Touch } from "./energy.ts";
 import {
   PHRASE_SHAPES,
@@ -50,6 +51,16 @@ export type PhraseBarsInput = {
    * そうなら、次のコードが決まってから鳴らすので、次のコードに合う音へ寄せられる
    */
   retargetable?: boolean;
+  /** 掛け合いでの役割。掛け合いでなければ省く */
+  trade?: Trade;
+};
+
+/** 掛け合いでの位置。相手と交代で弾いていることと、いまが応えのどこかを伝える */
+const TRADE_POSITIONS: Record<Trade["part"], string> = {
+  answer:
+    "You are trading two-bar phrases with another player. This is the first bar of your two-bar reply. Come in right away.",
+  close:
+    "You are trading two-bar phrases with another player. This is the last bar of your reply. Finish your thought clearly: the other player takes over next.",
 };
 
 /** 前のフレーズとの関係。人のアドリブで「考えて吹いている」ように聞こえる部分を、Jevに選ばせる */
@@ -211,6 +222,12 @@ export async function generatePhraseBars(
   random: () => number = Math.random,
 ): Promise<SoloBar[]> {
   const rhythms = rhythmsFor(input.bpm);
+  const trade = input.trade;
+  const answering = trade?.part === "answer";
+  /** 相手が弾いた内容。応えの1小節目で、相手が何か弾いていたときだけある */
+  const call = answering ? trade.call : null;
+  // 応えの2小節目は、1小節目で決めた応え方の音数を引き継ぐ。応えの1小節目は、応え方が決まった後で上書きする
+  let energy: Energy = trade?.part === "close" && input.memo.reply ? input.memo.reply.energy : input.energy;
   // 履歴が無く直前の小節だけが渡されたときは、それを1小節ぶんの履歴として扱う
   const history = input.memo.history ?? (input.memo.cells ? [{ chord: "", cells: input.memo.cells }] : []);
   const recent = history.at(-1)?.cells ?? [];
@@ -232,9 +249,16 @@ export async function generatePhraseBars(
   const baseState = {
     style: "jazz / neo soul jam session, improvised horn solo",
     tempo: `${input.bpm} BPM, ${tempoFeel(input.bpm)}`,
-    bandleader_cue: ENERGY[input.energy].cue,
+    bandleader_cue: ENERGY[energy].cue,
     ...(input.touch && input.touch !== "none" ? { accompanist: TOUCH_CUE[input.touch] } : {}),
-    where_we_are: PHRASE_POSITIONS[input.barInPhrase ?? 0] ?? PHRASE_POSITIONS[0],
+    where_we_are: trade ? TRADE_POSITIONS[trade.part] : (PHRASE_POSITIONS[input.barInPhrase ?? 0] ?? PHRASE_POSITIONS[0]),
+    ...(answering
+      ? {
+          partner_just_played: call
+            ? describeCall(call)
+            : "They stayed silent on their turn. Fill the space with a clear idea of your own.",
+        }
+      : {}),
     solo_so_far: history.length > 0 ? history.map(describeBar) : "nothing yet, the solo is just starting",
     ...(input.sustained
       ? { still_sounding: "The last note of the previous bar is still being held as this bar begins." }
@@ -252,7 +276,9 @@ export async function generatePhraseBars(
   // 4小節のまとまりの形と高さの流れ。まとまりの最初の小節で選び、残りの小節はメモから引き継ぐ
   const barInPhrase = input.barInPhrase ?? 0;
   const planning = barInPhrase === 0;
-  let phraseShape = planning ? undefined : phraseShapeById(input.memo.shape);
+  // 掛け合いでは自分の番が2小節しかないので、4小節の形（どこで休むか）は使わない
+  const shaping = planning && !trade;
+  let phraseShape = planning || trade ? undefined : phraseShapeById(input.memo.shape);
   let arcId = planning ? undefined : registerArcById(input.memo.arc)?.id;
   /** 半小節の「吹く・休む」。形が決まっていなければ undefined（縛りなし） */
   const slotAt = (half: number) => phraseShape?.slots[barInPhrase * 2 + half];
@@ -276,7 +302,7 @@ export async function generatePhraseBars(
   const pickRhythm = (
     probabilities: Record<string, number>,
     used: readonly string[],
-    energy = input.energy,
+    level: Energy = energy,
     constraint = unconstrained,
     runs = 0,
   ): Rhythm => {
@@ -284,7 +310,7 @@ export async function generatePhraseBars(
     const penalized = penalizeRecent(probabilities, runs > 0 ? used.filter((id) => !isRun(id)) : used);
     const shaped = holdBackLongNotes(keepRunning(boostSixteenths(penalized, input.bpm), runs));
     const odds = Object.fromEntries(
-      Object.entries(biasByEnergy(shaped, energy)).filter(([id, odd]) => odd > 0 && allowed(rhythmById(id), constraint)),
+      Object.entries(biasByEnergy(shaped, level)).filter(([id, odd]) => odd > 0 && allowed(rhythmById(id), constraint)),
     );
     // 縛りに合うものにJevが確率を置いていなければ、縛りに合う最初のリズムにする
     return Object.keys(odds).length > 0
@@ -335,17 +361,26 @@ export async function generatePhraseBars(
     "How should the intensity move within this bar?",
     Object.entries(SHAPES).map(([id, description]) => ({ id, description })),
   );
-  if (planning) {
+  if (shaping) {
     firstQuestions.phrase_shape = question(
       "A new four-bar phrase starts here. Pick where the soloist plays and where they stay silent over these four bars. Vary it from the previous phrase, and follow the bandleader's cue.",
       PHRASE_SHAPES,
     );
+  }
+  if (planning) {
     firstQuestions.register_arc = question(
       "Pick how the pitch of the solo travels over these four bars. A solo that goes somewhere is more exciting than one that stays in the same range.",
       REGISTER_ARCS,
     );
   }
-  if (history.length > 0) {
+  if (call) {
+    firstQuestions.reply = question(
+      "The other player just finished their phrase and it is your turn. How do you respond to what they played?",
+      Object.entries(REPLIES).map(([id, { description }]) => ({ id, description })),
+    );
+  }
+  // 相手に応えるときは、自分の前のフレーズとの関係は聞かない（相手に応えるのが先）
+  if (history.length > 0 && !call) {
     firstQuestions.relation = question(
       "How should this bar relate to the previous phrase? Good solos develop ideas instead of only stringing new ones together, but too much repetition gets dull.",
       Object.entries(RELATIONS).map(([id, { description }]) => ({ id, description })),
@@ -360,14 +395,25 @@ export async function generatePhraseBars(
   const pastArcs = planning
     ? [...(input.memo.arc ? [input.memo.arc] : []), ...(input.memo.pastArcs ?? [])].slice(0, MAX_PAST_PLANS)
     : (input.memo.pastArcs ?? []);
-  if (planning) {
+  // 相手への応え方。選ばれた応え方で、この番の音数と、音の動きの向きが決まる
+  const reply = call && first.reply ? (sampleFromDistribution(first.reply.probabilities, random) as ReplyId) : null;
+  if (call && reply) energy = replyEnergy(reply, call, energy);
+  /** 真似るなら相手と同じ向きへ、返すなら逆の向きへ、音の動きを寄せる */
+  const towardCall = (odds: Record<string, number>): Record<string, number> => {
+    if (!call || (reply !== "echo" && reply !== "answer")) return odds;
+    const opposite = { rising: "falling", falling: "rising", level: "wavy", wavy: "wavy" } as const;
+    return biasByDirection(odds, reply === "echo" ? call.direction : opposite[call.direction]);
+  };
+  if (shaping) {
     // 最近のまとまりで使った形・流れは選ばれにくくする。直前の1つだけを見ると、2種類の交互になった
     phraseShape = phraseShapeById(
       sampleFromDistribution(
-        biasShapesByEnergy(penalizeRecent(first.phrase_shape!.probabilities, pastShapes), input.energy),
+        biasShapesByEnergy(penalizeRecent(first.phrase_shape!.probabilities, pastShapes), energy),
         random,
       ),
     );
+  }
+  if (planning) {
     arcId = sampleFromDistribution(penalizeRecent(first.register_arc!.probabilities, pastArcs), random);
   }
   // 同じ関係が続くと単調になるので、直前に選ばれた関係は選ばれにくくする
@@ -376,7 +422,7 @@ export async function generatePhraseBars(
         Object.fromEntries(
           Object.entries(
             penalizeRecent(first.relation.probabilities, input.memo.relation ? [input.memo.relation] : []),
-          ).map(([id, odd]) => [id, id === "space" ? odd * spaceBias(input.energy) : odd]),
+          ).map(([id, odd]) => [id, id === "space" ? odd * spaceBias(energy) : odd]),
         ),
         random,
       ) as Relation)
@@ -397,7 +443,8 @@ export async function generatePhraseBars(
 
     // 形が「休む」としている場所では休む。前の小節が次へつなぐ形で終わっていても、形が決めたフレーズの終わりを守る
     const resting = slotAt(0) === false;
-    const constraint: Constraint = { allowRest: constraintFor(0).allowRest && !mustLand };
+    // 応えの出だしは休まない。相手が弾き終えたら、すぐ何か弾いて応える
+    const constraint: Constraint = { allowRest: constraintFor(0).allowRest && !mustLand && !answering };
     // 着地が必要なのに遅れて入るリズムや、形の縛りに合わないリズムは、前の小節から引き継がない
     const canKeepRhythm =
       motifRhythm !== undefined && !(mustLand && motifRhythm.hits[0]?.at !== 0) && allowed(motifRhythm, constraint);
@@ -407,7 +454,7 @@ export async function generatePhraseBars(
     const sampled = pickRhythm(
       holdBackTies(favorDownbeat(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds)),
       used,
-      input.energy,
+      energy,
       constraint,
       runsBefore,
     );
@@ -425,10 +472,10 @@ export async function generatePhraseBars(
     const contour =
       keepContour && motifContour
         ? motifContour
-        : pickContour(relation === "contrast" ? contrasted(contourOdds) : contourOdds, used);
+        : pickContour(towardCall(relation === "contrast" ? contrasted(contourOdds) : contourOdds), used);
     return { rhythm, contour };
   })();
-  const dynamicsBias = DYNAMICS_BIAS[input.energy];
+  const dynamicsBias = DYNAMICS_BIAS[energy];
   // 直前の小節と同じ強さ・同じ動きは選ばれにくくして、小節ごとの対比を作る
   const dynamics = sampleFromDistribution(
     Object.fromEntries(
@@ -471,12 +518,12 @@ export async function generatePhraseBars(
         : pickRhythm(
             second.rhythm_second!.probabilities,
             usedSoFar,
-            input.energy,
+            energy,
             constraintFor(1),
             // 前半が走っていれば、後半も走りやすくする（1小節まるごと走る）
             firstHalf.rhythm.run ? runsBefore + 1 : 0,
           ),
-    contour: pickContour(second.contour_second!.probabilities, usedSoFar),
+    contour: pickContour(towardCall(second.contour_second!.probabilities), usedSoFar),
   };
   const composed: [Cell, Cell] = [
     compose(firstHalf.rhythm, firstHalf.contour),
@@ -503,7 +550,8 @@ export async function generatePhraseBars(
       summary: `${label(firstHalf.rhythm, firstHalf.contour)} + ${label(secondHalf.rhythm, secondHalf.contour)}`,
       details: [
         `強弱 ${dynamics} / ${shape}`,
-        `盛り上がり ${ENERGY[input.energy].label}`,
+        `盛り上がり ${ENERGY[energy].label}`,
+        ...(reply ? [`応え方 ${REPLIES[reply].label}`] : []),
         ...(relation ? [`前との関係 ${RELATIONS[relation].label}`] : []),
         ...(phraseShape ? [`形 ${phraseShape.label}`] : []),
         ...(arcId ? [`高さ ${registerArcById(arcId)?.label ?? arcId}`] : []),
@@ -521,8 +569,11 @@ export async function generatePhraseBars(
         ...(arcId ? { arc: arcId } : {}),
         ...(pastShapes.length > 0 ? { pastShapes } : {}),
         ...(pastArcs.length > 0 ? { pastArcs } : {}),
+        // 応えの2小節目へ、応え方とその音数を引き継ぐ
+        ...(reply ? { reply: { id: reply, energy } } : {}),
       },
       plan: { cells: composed, render },
+      ...(reply && first.reply ? { reply: { id: reply, label: REPLIES[reply].label, odds: first.reply.probabilities } } : {}),
     };
   });
 }

@@ -1,7 +1,15 @@
 import { type DecisionClient, createJevClient, createMockClient } from "../../../lib/jev/client.ts";
 import { NOTE_NAMES } from "../../../lib/music/chord.ts";
 import { KNOWN_CHORDS } from "../../../lib/progression/candidates.ts";
-import { SOLO_STRATEGIES, type SoloBar, type SoloMemo, type SoloRequest, type SoloResponse } from "../../../lib/solo/api.ts";
+import {
+  SOLO_STRATEGIES,
+  type SoloBar,
+  type SoloMemo,
+  type SoloRequest,
+  type SoloResponse,
+  type Trade,
+} from "../../../lib/solo/api.ts";
+import { CALL_DENSITIES, CALL_DIRECTIONS, isReplyId } from "../../../lib/solo/call.ts";
 import { SLOTS_PER_BAR, generateBar } from "../../../lib/solo/generate.ts";
 import { TOUCHES, isEnergy } from "../../../lib/solo/energy.ts";
 import { generatePhraseBars } from "../../../lib/solo/generate-phrases.ts";
@@ -65,6 +73,7 @@ async function generateAll(client: DecisionClient, body: SoloRequest): Promise<P
         barInPhrase: body.barInPhrase,
         sustained: body.sustained,
         retargetable: body.retargetable,
+        ...(body.trade ? { trade: body.trade } : {}),
       });
       return bars.map((value) => ({ status: "fulfilled", value }));
     } catch (reason) {
@@ -107,7 +116,7 @@ function fail(reason: string): never {
 
 function parseMemo(value: unknown): SoloMemo {
   if (typeof value !== "object" || value === null) fail("本体がオブジェクトではない");
-  const { cells, dynamics, choices, history, relation, intensity, shape, arc, pastShapes, pastArcs } = value as Record<
+  const { cells, dynamics, choices, history, relation, intensity, shape, arc, pastShapes, pastArcs, reply } = value as Record<
     string,
     unknown
   >;
@@ -143,6 +152,11 @@ function parseMemo(value: unknown): SoloMemo {
     if (typeof relation !== "string" || !/^[a-z-]{1,20}$/.test(relation)) fail("memo.relation");
     memo.relation = relation;
   }
+  if (reply !== undefined) {
+    const { id, energy } = (typeof reply === "object" && reply !== null ? reply : {}) as Record<string, unknown>;
+    if (!isReplyId(id) || !isEnergy(energy)) fail("memo.reply");
+    memo.reply = { id, energy };
+  }
   if (dynamics !== undefined) {
     if (typeof dynamics !== "string" || !/^[a-z-]{1,20}$/.test(dynamics)) fail("memo.dynamics");
     memo.dynamics = dynamics;
@@ -153,6 +167,19 @@ function parseMemo(value: unknown): SoloMemo {
     memo.choices = choices as SlotChoice[];
   }
   return memo;
+}
+
+function parseTrade(value: unknown): Trade {
+  if (typeof value !== "object" || value === null) fail("trade");
+  const { part, call } = value as Record<string, unknown>;
+  if (part !== "answer" && part !== "close") fail("trade.part");
+  if (call === null || call === undefined) return { part, call: null };
+  if (typeof call !== "object") fail("trade.call");
+  const { density, direction, lastPitch } = call as Record<string, unknown>;
+  const densityValue = CALL_DENSITIES.find((option) => option === density);
+  const directionValue = CALL_DIRECTIONS.find((option) => option === direction);
+  if (!densityValue || !directionValue || !isMidiPitch(lastPitch)) fail("trade.call の内容");
+  return { part, call: { density: densityValue, direction: directionValue, lastPitch } };
 }
 
 function parseRequest(value: unknown): SoloRequest {
@@ -171,6 +198,7 @@ function parseRequest(value: unknown): SoloRequest {
     sustained = false,
     retargetable = false,
     mock = false,
+    trade,
   } = value as Record<string, unknown>;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) fail("chords の数");
@@ -201,6 +229,7 @@ function parseRequest(value: unknown): SoloRequest {
     sustained,
     retargetable,
     mock: mock === true,
+    ...(trade === undefined ? {} : { trade: parseTrade(trade) }),
     memo,
   };
 }

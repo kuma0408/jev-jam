@@ -613,3 +613,67 @@ describe("biasByEnergy", () => {
     }
   });
 });
+
+describe("generatePhraseBars（掛け合い）", () => {
+  const call = { density: "busy" as const, direction: "rising" as const, lastPitch: 72 };
+  const previousBar = { chord: "Cmaj7", cells: ["r-charleston", "c-arch", "r-half", "c-fall-from-fifth"] };
+  const answering = { ...input, memo: { history: [previousBar] }, trade: { part: "answer" as const, call } };
+
+  it("相手が弾いた内容を言葉でJevに伝え、どう応えるかを選ばせる", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, answering);
+    expect(calls[0]!.state.partner_just_played).toMatch(/busy/i);
+    expect(Object.keys(calls[0]!.questions.reply!.criteria)).toEqual(["echo", "answer", "push", "calm"]);
+  });
+
+  it("応えるときは、自分の前のフレーズとの関係は聞かない（相手に応えるのが先）", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, answering);
+    expect(Object.keys(calls[0]!.questions)).not.toContain("relation");
+  });
+
+  it("掛け合いでは、4小節の形（どこで休むか）は聞かない。自分の番は2小節しかない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, answering);
+    expect(Object.keys(calls[0]!.questions)).not.toContain("phrase_shape");
+  });
+
+  it("応えの出だしは休まない（Jevが休みを選んでも、何か弾いて応える）", async () => {
+    const { client } = scriptedClient({ ...picks, rhythm_first: "r-rest" });
+    const [bar] = await generatePhraseBars(client, answering);
+    expect(bar!.notes.some((note) => note.startBeats < 2)).toBe(true);
+  });
+
+  it("選ばれた応え方と確率を返し、画面用の補足とメモにも残す", async () => {
+    const { client } = scriptedClient({ ...picks, reply: "push" });
+    const [bar] = await generatePhraseBars(client, { ...answering, energy: 1 });
+    expect(bar!.reply).toEqual({ id: "push", label: "畳みかける", odds: { push: 1 } });
+    expect(bar!.details).toContain("応え方 畳みかける");
+    // 相手は細かく弾いたので、畳みかけるなら最大の盛り上がりで弾く
+    expect(bar!.memo.reply).toEqual({ id: "push", energy: 4 });
+  });
+
+  it("相手が何も弾かなかったら、応え方は聞かず、黙っていたことを伝える", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, { ...answering, trade: { part: "answer", call: null } });
+    expect(Object.keys(calls[0]!.questions)).not.toContain("reply");
+    expect(calls[0]!.state.partner_just_played).toMatch(/silent/i);
+    expect(bar!.reply).toBeUndefined();
+  });
+
+  it("応えの2小節目は、1小節目で決めた応え方の盛り上がりを引き継ぎ、締めくくることを伝える", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, {
+      ...input,
+      energy: 1,
+      barInPhrase: 1,
+      memo: { history: [previousBar], reply: { id: "push", energy: 4 } },
+      trade: { part: "close", call: null },
+    });
+    expect(calls[0]!.state.bandleader_cue).toMatch(/all out/i);
+    expect(calls[0]!.state.where_we_are).toMatch(/last bar of your/i);
+    expect(Object.keys(calls[0]!.questions)).not.toContain("reply");
+    // 次の番のために、応え方はメモに残さない
+    expect(bar!.memo.reply).toBeUndefined();
+  });
+});

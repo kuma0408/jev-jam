@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTOURS, contourById, favorLeaps } from "./contours.ts";
+import { CONTOURS, biasByDirection, contourById, favorLeaps } from "./contours.ts";
 
 const stepsOf = (id: string, count: number) => contourById(id).notes(count).map((note) => note.step);
 
@@ -133,5 +133,28 @@ describe("favorLeaps（跳躍のある動きを選ばれやすくする）", () 
     for (const value of Object.values(favorLeaps(uniform))) {
       expect(value).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("biasByDirection", () => {
+  const odds = { "c-rise-from-root": 0.25, "c-fall-from-fifth": 0.25, "c-repeat-fifth": 0.25, "c-arch": 0.25 };
+
+  it("上がる動きに寄せると、上がる動きが下がる動きより選ばれやすくなる", () => {
+    const biased = biasByDirection(odds, "rising");
+    expect(biased["c-rise-from-root"]!).toBeGreaterThan(biased["c-fall-from-fifth"]!);
+  });
+
+  it("下がる動きに寄せると、その逆になる", () => {
+    const biased = biasByDirection(odds, "falling");
+    expect(biased["c-fall-from-fifth"]!).toBeGreaterThan(biased["c-rise-from-root"]!);
+  });
+
+  it("同じあたりにとどまる動きに寄せると、同じ音を繰り返す動きが選ばれやすくなる", () => {
+    const biased = biasByDirection(odds, "level");
+    expect(biased["c-repeat-fifth"]!).toBeGreaterThan(biased["c-rise-from-root"]!);
+  });
+
+  it("波のような動きには、寄せない", () => {
+    expect(biasByDirection(odds, "wavy")).toEqual(odds);
   });
 });
