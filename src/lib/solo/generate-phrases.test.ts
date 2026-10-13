@@ -213,6 +213,18 @@ describe("generatePhraseBars（これまでの流れを踏まえる）", () => {
     expect(bar!.memo.cells![0]).toBe("r-four-eighths");
   });
 
+  it("同じリズムが2小節続いていたら、もう引き継がない（同じリズムが延々と残るのを防ぐ）", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "develop-rhythm" });
+    const [bar] = await generatePhraseBars(client, { ...input, memo: { history: [previousBar, previousBar] } });
+    expect(bar!.memo.cells![0]).toBe("r-four-eighths");
+  });
+
+  it("同じ音の形が2小節続いていたら、もう引き継がない", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "develop-melody" });
+    const [bar] = await generatePhraseBars(client, { ...input, memo: { history: [previousBar, previousBar] } });
+    expect(bar!.memo.cells![1]).toBe("c-arpeggio-up-root");
+  });
+
   it("選ばれた関係を、画面用の補足とメモに残す", async () => {
     const { client } = scriptedClient({ ...picks, relation: "echo" });
     const [bar] = await generatePhraseBars(client, withHistory);
@@ -234,6 +246,12 @@ describe("penalizeRecent", () => {
     const adjusted = penalizeRecent({ "c-arch": 0.5, "c-valley": 0.5 }, ["c-arch"]);
     expect(adjusted["c-arch"]).toBeLessThan(adjusted["c-valley"]!);
     expect(adjusted["c-valley"]).toBe(0.5);
+  });
+
+  it("何度も使ったものほど、大きく下げる", () => {
+    const once = penalizeRecent({ "c-arch": 1 }, ["c-arch"]);
+    const twice = penalizeRecent({ "c-arch": 1 }, ["c-arch", "c-arch"]);
+    expect(twice["c-arch"]).toBeLessThan(once["c-arch"]!);
   });
 
   it("休みは下げない（間は繰り返してよい）", () => {
