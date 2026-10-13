@@ -112,10 +112,8 @@ describe("generatePhraseBars", () => {
     expect(bar!.summary).toBe("four-eighths / arpeggio-up-root + rest");
     expect(bar!.details).toContain("loud");
     expect(bar!.details).toContain("crescendo");
-    expect(bar!.memo).toEqual({
-      cells: ["r-four-eighths", "c-arpeggio-up-root", "r-rest", "c-fall-from-fifth"],
-      dynamics: "loud",
-    });
+    const cells = ["r-four-eighths", "c-arpeggio-up-root", "r-rest", "c-fall-from-fifth"];
+    expect(bar!.memo).toEqual({ cells, dynamics: "loud", history: [{ chord: "Dm7", cells }] });
   });
 
   it("小節まるごと休みなら、直前の音の高さを引き継ぐ", async () => {
@@ -132,6 +130,102 @@ describe("generatePhraseBars", () => {
     expect(bars.map((bar) => bar.chord)).toEqual(["Dm7", "Fmaj7", "G7"]);
     expect(calls[0]!.questions.rhythm_first_1!.instructions).toContain("Fmaj7");
     expect(Object.keys(calls[1]!.questions)).toHaveLength(6);
+  });
+});
+
+describe("generatePhraseBars（これまでの流れを踏まえる）", () => {
+  const previousBar = { chord: "Cmaj7", cells: ["r-charleston", "c-arch", "r-half", "c-fall-from-fifth"] };
+  const withHistory = { ...input, memo: { history: [previousBar] } };
+
+  it("ソロの出だしでは、前との関係は聞かない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, input);
+    expect(Object.keys(calls[0]!.questions)).not.toContain("relation");
+  });
+
+  it("2小節目からは、前のフレーズとの関係をJevに選ばせる", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, withHistory);
+    expect(Object.keys(calls[0]!.questions)).toContain("relation");
+  });
+
+  it("これまでのソロを、どのコードの上で何を吹いたかの説明でJevに渡す", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const older = { chord: "Am7", cells: ["r-rest", "c-arch", "r-whole", "c-rise-from-third"] };
+    await generatePhraseBars(client, { ...input, memo: { history: [older, previousBar] } });
+    const soFar = calls[0]!.state.solo_so_far as string[];
+    expect(soFar).toHaveLength(2);
+    expect(soFar[0]).toContain("Am7");
+    expect(soFar[1]).toContain("Cmaj7");
+    expect(soFar[1]).toContain(rhythmById("r-charleston").description);
+    expect(soFar[1]).toContain(contourById("c-fall-from-fifth").description);
+  });
+
+  it("4小節のまとまりの中の位置を、意味のある言葉でJevに渡す", async () => {
+    const texts = [];
+    for (const barInPhrase of [0, 1, 2, 3] as const) {
+      const { client, calls } = scriptedClient(picks);
+      await generatePhraseBars(client, { ...withHistory, barInPhrase });
+      texts.push(String(calls[0]!.state.where_we_are));
+    }
+    expect(new Set(texts).size).toBe(4);
+    expect(texts[0]).toMatch(/opening|begin/i);
+    expect(texts[3]).toMatch(/last|conclu/i);
+  });
+
+  it("「リズムを引き継ぐ」なら、前半のリズムは前の小節と同じにし、音の動きは変える", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "develop-rhythm" });
+    const [bar] = await generatePhraseBars(client, withHistory);
+    expect(bar!.memo.cells![0]).toBe("r-charleston");
+    expect(bar!.memo.cells![1]).toBe("c-arpeggio-up-root");
+  });
+
+  it("「音の形を引き継ぐ」なら、前半の動きは前の小節と同じにし、リズムは変える", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "develop-melody" });
+    const [bar] = await generatePhraseBars(client, withHistory);
+    expect(bar!.memo.cells![0]).toBe("r-four-eighths");
+    expect(bar!.memo.cells![1]).toBe("c-arch");
+  });
+
+  it("「繰り返す」なら、前半はリズムも動きも前の小節と同じにする（コードが違うので音は変わる）", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "echo" });
+    const [bar] = await generatePhraseBars(client, withHistory);
+    expect(bar!.memo.cells!.slice(0, 2)).toEqual(["r-charleston", "c-arch"]);
+  });
+
+  it("「対照的に」なら、Jevが選んだものをそのまま使う", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "contrast" });
+    const [bar] = await generatePhraseBars(client, withHistory);
+    expect(bar!.memo.cells!.slice(0, 2)).toEqual(["r-four-eighths", "c-arpeggio-up-root"]);
+  });
+
+  it("前の小節の前半が休みなら、後半のフレーズを引き継ぐ", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "echo" });
+    const rested = { chord: "Cmaj7", cells: ["r-rest", "c-arch", "r-two-quarters", "c-valley"] };
+    const [bar] = await generatePhraseBars(client, { ...input, memo: { history: [rested] } });
+    expect(bar!.memo.cells!.slice(0, 2)).toEqual(["r-two-quarters", "c-valley"]);
+  });
+
+  it("引き継ぐリズムがいまのテンポ帯に無ければ、Jevが選んだリズムを使う", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "develop-rhythm" });
+    const slowBar = { chord: "Cmaj7", cells: ["r-sixteenth-run", "c-arch", "r-rest", "c-arch"] };
+    const [bar] = await generatePhraseBars(client, { ...input, bpm: 220, memo: { history: [slowBar] } });
+    expect(bar!.memo.cells![0]).toBe("r-four-eighths");
+  });
+
+  it("選ばれた関係を、画面用の補足とメモに残す", async () => {
+    const { client } = scriptedClient({ ...picks, relation: "echo" });
+    const [bar] = await generatePhraseBars(client, withHistory);
+    expect(bar!.details).toContain("繰り返す");
+    expect(bar!.memo.relation).toBe("echo");
+  });
+
+  it("メモの履歴に今回の小節を足し、直近4小節だけ残す", async () => {
+    const { client } = scriptedClient(picks);
+    const history = ["Cmaj7", "Fmaj7", "E7", "Am7"].map((chord) => ({ ...previousBar, chord }));
+    const [bar] = await generatePhraseBars(client, { ...input, memo: { history } });
+    expect(bar!.memo.history!.map((entry) => entry.chord)).toEqual(["Fmaj7", "E7", "Am7", "Dm7"]);
+    expect(bar!.memo.history!.at(-1)!.cells).toEqual(bar!.memo.cells);
   });
 });
 
