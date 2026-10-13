@@ -200,6 +200,17 @@ describe("renderCells", () => {
     expect(surge[4]!.velocity).toBeGreaterThan(surge[6]!.velocity);
   });
 
+  it("持ち越しを禁じると、持ち越しの音だけを落として、続きの音は鳴らす", () => {
+    const tie = cell([
+      { at: 0, dur: 1, step: 0, tie: true },
+      { at: 1, dur: 0.5, step: 2 },
+    ]);
+    const notes = renderCells([tie, REST], "Dm7", { previousPitch: 64, ...range, ...plain, allowTie: false });
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ startBeats: 1, pitch: 65 });
+    expect(notes[0]!.tie).toBeUndefined();
+  });
+
   it("休む型だけなら音を返さない", () => {
     expect(renderCells([REST, REST], "Dm7", { previousPitch: 62, ...range, ...plain })).toEqual([]);
   });
