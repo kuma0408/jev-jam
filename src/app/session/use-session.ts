@@ -17,6 +17,7 @@ import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/
 import { aimPitch, fitsChord } from "../../lib/solo/aim.ts";
 import type { SoloBar, SoloMemo, SoloNote, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import { padPitches } from "../../lib/music/pads.ts";
+import { type PlayedNote, type Turn, TURN_BARS, prepareBeat, summarizeCall, turnOf } from "../../lib/solo/call.ts";
 import { type Energy, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
 import { type NoteExpression, planExpression } from "../../lib/solo/expression.ts";
 import { renderCells } from "../../lib/solo/render-cells.ts";
@@ -51,6 +52,8 @@ export type SessionSettings = {
   soloDb: number;
   /** 盛り上がりのつまみ。ソロの音数と強さ、伴奏の刻みに効く */
   energy: Energy;
+  /** 掛け合い。true なら、Jevとユーザーが2小節ずつ交代で弾く。false なら、Jevがずっとソロを取る */
+  trade: boolean;
 };
 
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
@@ -77,7 +80,9 @@ export type BarLog = {
   chord: string;
   /** start: 最初の小節 / auto: 選ばれず既定の候補に進んだ / chosen: ユーザーが選んだ */
   how: "start" | "auto" | "chosen";
-  /** ソロが小節の頭に間に合わなければ null */
+  /** 掛け合いでの、その小節の番。掛け合いでなければ無い */
+  turn?: Turn;
+  /** ソロが小節の頭に間に合わなければ null。ユーザーの番の小節も null */
   solo: Pick<SoloBar, "summary" | "details" | "latencyMs" | "calls"> | null;
 };
 
@@ -127,6 +132,10 @@ export type Session = {
    */
   padOn: (slot: number) => void;
   padOff: (slot: number) => void;
+  /** 掛け合いで、いまどちらの番の何小節目か（bar は1始まり）。掛け合いでないときや停止中は null */
+  turn: { who: Turn; bar: number } | null;
+  /** 掛け合いで、Jevが直前のあなたのフレーズにどう応えたか。odds はJevが返した確率 */
+  reply: NonNullable<SoloBar["reply"]> | null;
   /** つまみの値に、ユーザーの叩き方を足した実際の盛り上がり。ソロと伴奏はこれに応える */
   liveEnergy: Energy;
   /** ユーザーが直近1小節にどれだけ叩いたか */
@@ -201,6 +210,10 @@ type Engine = {
   heldOver: boolean;
   /** ユーザーが押さえている鍵盤の音（ピッチクラス → 周波数）。離したときに止める */
   heldNotes: Map<number, number>;
+  /** 掛け合いで、ユーザーが自分の番に弾いた音。番が終わるときに要約してJevに渡す */
+  callNotes: PlayedNote[];
+  /** ユーザーの番が始まった時刻（performance.now のミリ秒） */
+  turnStartedAt: number;
   /** 盛り上がりが変わって、次の小節のソロを作り直した小節の番号。同じ小節では二度作り直さない */
   repreparedBar: number;
   /** 次の小節のために用意できたソロのどれか1つ。用意していないコードへ進んだとき、同じフレーズをそのコードに乗せ直す */
@@ -274,6 +287,14 @@ function reachesBarEnd(note: SoloNote): boolean {
   return note.startBeats + note.durationBeats >= BEATS_PER_BAR - BAR_END_MARGIN_BEATS;
 }
 
+/** 音の高さを、オクターブ単位で動かして楽器の音域に収める */
+function intoRange(pitch: number, range: { low: number; high: number }): number {
+  let moved = pitch;
+  while (moved < range.low) moved += 12;
+  while (moved > range.high) moved -= 12;
+  return moved;
+}
+
 /** 強さ（0〜1）に応じたフィルターの開き具合。弱い音はこもらせ、強い音は明るくする */
 function brightnessHz(velocity: number): number {
   return 700 + velocity * velocity * 7300;
@@ -290,6 +311,7 @@ export function useSession(): Session {
     voice: "sax-recorded",
     soloDb: 0,
     energy: 2,
+    trade: true,
   });
   const [chord, setChord] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ChordCandidate[]>([]);
@@ -298,6 +320,8 @@ export function useSession(): Session {
   const [clientName, setClientName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<BarLog[]>([]);
+  const [turn, setTurn] = useState<Session["turn"]>(null);
+  const [reply, setReply] = useState<Session["reply"]>(null);
   /** ユーザーが直近1小節に叩いた回数 */
   const [tapCount, setTapCount] = useState(0);
 
@@ -346,22 +370,31 @@ export function useSession(): Session {
         engine.preparedAny = null;
       }
       setReadyMs(null);
-      const { bpm, strategy, voice, energy: dial } = settingsRef.current;
+      const { bpm, strategy, voice, energy: dial, trade: trading } = settingsRef.current;
       const taps = engine.taps.length;
+      const { range } = SOLO_INSTRUMENTS[voice];
+      // 掛け合いでは、これから作る小節が応えの1小節目か2小節目かを伝える。
+      // 1小節目なら、ユーザーが弾いた内容の要約も渡す
+      const target = engine.bar + 1;
+      const answering = target === 1 || turnOf(target - 1) === "you";
+      const call = trading && answering ? summarizeCall(engine.callNotes) : null;
+      const trade: SoloRequest["trade"] = trading ? { part: answering ? "answer" : "close", call } : undefined;
       return requestSolos({
         chords,
         strategy,
         bpm,
-        previousPitch,
-        range: SOLO_INSTRUMENTS[voice].range,
+        // ユーザーが弾き終えた音の近くから、Jevが弾き始める
+        previousPitch: call ? intoRange(call.lastPitch, range) : previousPitch,
+        range,
         energy: liveEnergy(dial, taps),
         touch: touchOf(taps),
         // これから作るのは、いまの小節の次の小節。4小節のまとまりの中の位置を伝える
-        barInPhrase: engine.bar % 4,
-        sustained,
+        barInPhrase: trade ? (answering ? 0 : 1) : engine.bar % 4,
+        sustained: sustained && !(trade && answering),
         retargetable,
         // アドレスに ?mock=1 を付けて開くと、Jevを呼ばずにダミーで動かす（動作確認用）
         mock: new URLSearchParams(window.location.search).has("mock"),
+        ...(trade ? { trade } : {}),
         memo,
       })
         .then((response) => {
@@ -410,8 +443,19 @@ export function useSession(): Session {
         how = "auto";
         engine.history.push(current);
       }
+      const trading = settingsRef.current.trade;
+      const who: Turn = trading ? turnOf(bar) : "jev";
+      if (trading && who === "you" && turnOf(bar - 1) === "jev") {
+        // ユーザーの番が始まる。ここから弾かれた音を覚えておく
+        engine.callNotes = [];
+        engine.turnStartedAt = performance.now();
+      }
+      // ユーザーの番では、Jevは吹かない。
       // 用意していないコードへ進んだときは、同じフレーズをそのコードの上に乗せ直す
-      const solo = engine.prepared.get(current) ?? transplant(engine.preparedAny, current, engine.held ? engine.heldPitch : null);
+      const solo =
+        who === "you"
+          ? null
+          : (engine.prepared.get(current) ?? transplant(engine.preparedAny, current, engine.held ? engine.heldPitch : null));
       engine.selected = null;
       engine.pendingSwitch = null;
       engine.heldOver = false;
@@ -490,14 +534,23 @@ export function useSession(): Session {
         retargetable = sustained && last !== undefined && !last.tie && last.startBeats >= DEADLINE_BEATS;
         engine.previous = { pitch: solo.lastPitch, memo: solo.memo };
       }
-      void prepare(
-        engine,
-        next.map((candidate) => candidate.chord),
-        engine.previous.pitch,
-        engine.previous.memo,
-        // この小節の最後の音が鳴り続けるなら、次の小節はそれを持ち越せる
-        { sustained, retargetable },
-      );
+      if (!trading || (who === "jev" && turnOf(bar + 1) === "jev")) {
+        void prepare(
+          engine,
+          next.map((candidate) => candidate.chord),
+          engine.previous.pitch,
+          engine.previous.memo,
+          // この小節の最後の音が鳴り続けるなら、次の小節はそれを持ち越せる
+          { sustained, retargetable },
+        );
+      } else {
+        // 次の小節がユーザーの番なら、ソロは要らない（Jevを呼ばない）。
+        // 次がJevの応えなら、ユーザーの演奏をできるだけ聴いてから聞くので、ここではまだ依頼しない（onBeat で依頼する）
+        engine.requestToken++;
+        engine.prepared = new Map();
+        engine.preparedAny = null;
+        engine.lastRequest = null;
+      }
 
       // 画面は、音が実際に鳴るタイミングに合わせて更新する
       draw.schedule(() => {
@@ -505,12 +558,16 @@ export function useSession(): Session {
         setChord(current);
         setCandidates(next);
         setSelected(engine.selected);
+        setTurn(trading ? { who, bar: ((bar - 1) % TURN_BARS) + 1 } : null);
+        // 応えの1小節目で、Jevがどう応えたかを出す。ユーザーの番の間も残して、次の応えで入れ替える
+        if (!trading || (who === "jev" && turnOf(bar - 1) !== "jev")) setReply(solo?.reply ?? null);
         setLog((entries) =>
           [
             {
               bar,
               chord: current,
               how,
+              ...(trading ? { turn: who } : {}),
               solo: solo && {
                 summary: solo.summary,
                 details: expressionSummary ? `${solo.details} / 表現 ${expressionSummary}` : solo.details,
@@ -654,9 +711,20 @@ export function useSession(): Session {
       if (beatIndex === DEADLINE_BEATS) {
         aimLastBeat(engine, plan);
       }
+      // 掛け合い: ユーザーの番の最後の小節で、間に合ういちばん遅い拍まで聴いてから、Jevに応えを聞く
+      const { trade: trading, bpm } = settingsRef.current;
+      if (trading && turnOf(plan.bar) === "you" && turnOf(plan.bar + 1) === "jev" && beatIndex === prepareBeat(bpm)) {
+        void prepare(
+          engine,
+          nextChordCandidates(engine.history).map((candidate) => candidate.chord),
+          engine.previous.pitch,
+          engine.previous.memo,
+          { sustained: false, retargetable: false },
+        );
+      }
       scheduleBeat(engine, plan, beatIndex, time);
     },
-    [aimLastBeat, scheduleBeat, startBar, switchChord],
+    [aimLastBeat, prepare, scheduleBeat, startBar, switchChord],
   );
 
   const stop = useCallback(() => {
@@ -687,6 +755,8 @@ export function useSession(): Session {
     setSelected(null);
     setReadyMs(null);
     setTapCount(0);
+    setTurn(null);
+    setReply(null);
   }, []);
 
   const start = useCallback(async () => {
@@ -733,6 +803,8 @@ export function useSession(): Session {
         heldPitch: SOLO_START_PITCH,
         heldOver: false,
         heldNotes: new Map(),
+        callNotes: [],
+        turnStartedAt: 0,
         repreparedBar: 0,
         preparedAny: null,
         now: null,
@@ -833,6 +905,13 @@ export function useSession(): Session {
     [countTaps],
   );
 
+  /** 掛け合いで、ユーザーが自分の番に弾いた音を覚える */
+  const recordCall = useCallback((engine: Engine, pitch: number) => {
+    const { trade: trading, bpm } = settingsRef.current;
+    if (!trading || !engine.now || turnOf(engine.now.bar) !== "you") return;
+    engine.callNotes.push({ pitch, beat: (performance.now() - engine.turnStartedAt) / (60_000 / bpm) });
+  }, []);
+
   const tap = useCallback(() => {
     const engine = engineRef.current;
     const current = engine?.history.at(-1);
@@ -863,8 +942,9 @@ export function useSession(): Session {
       engine.heldNotes.set(pitchClass, frequency);
       emit({ kind: "jam", pitches: [pitch] });
       recordTap(engine);
+      recordCall(engine, pitch);
     },
-    [emit, recordTap],
+    [emit, recordCall, recordTap],
   );
 
   const noteOff = useCallback((pitchClass: number) => {
@@ -889,8 +969,9 @@ export function useSession(): Session {
       engine.heldNotes.set(held, frequency);
       emit({ kind: "jam", pitches: [pitch] });
       recordTap(engine);
+      recordCall(engine, pitch);
     },
-    [emit, recordTap],
+    [emit, recordCall, recordTap],
   );
 
   const padOff = useCallback((slot: number) => noteOff(PAD_HELD_OFFSET + slot), [noteOff]);
@@ -916,6 +997,8 @@ export function useSession(): Session {
   // 以前は叩き方が変わるたびに作り直していて、鍵盤を弾くだけで依頼が倍に増えていた
   useEffect(() => {
     const engine = engineRef.current;
+    // 掛け合いでは作り直さない。応えの音数は応え方で決まるので、作り直してもJevを呼ぶ回数が増えるだけになる
+    if (settingsRef.current.trade) return;
     if (engine?.lastRequest && engine.bar > 0 && engine.repreparedBar !== engine.bar) {
       engine.repreparedBar = engine.bar;
       const { chords, previousPitch, memo, sustained, retargetable } = engine.lastRequest;
@@ -949,6 +1032,8 @@ export function useSession(): Session {
       noteOff,
       padOn,
       padOff,
+      turn,
+      reply,
       liveEnergy: live,
       touch,
     }),
@@ -973,6 +1058,8 @@ export function useSession(): Session {
       noteOff,
       padOn,
       padOff,
+      turn,
+      reply,
       live,
       touch,
     ],

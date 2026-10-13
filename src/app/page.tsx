@@ -11,6 +11,7 @@ import { ParticleField } from "./components/particle-field.tsx";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
 import { PianoRoll } from "./components/piano-roll.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
+import { TurnBanner } from "./components/turn-banner.tsx";
 import { useSession } from "./session/use-session.ts";
 
 export default function Page() {
@@ -159,6 +160,51 @@ export default function Page() {
 
         <PianoRoll subscribe={session.subscribe} playing={playing} />
 
+        <section className="melody" aria-labelledby="melody-heading">
+          <div className="melody-head">
+            <h2 id="melody-heading" className="jam-heading">
+              旋律を弾く
+            </h2>
+            <fieldset className="melody-mode">
+              <legend className="visually-hidden">旋律を弾く鍵盤</legend>
+              {(
+                [
+                  ["easy", "合う音だけ（A〜K）"],
+                  ["piano", "ピアノの12音"],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="melody-mode-option">
+                  <input
+                    type="radio"
+                    name="keyboard"
+                    value={value}
+                    checked={keyboard === value}
+                    onChange={() => setKeyboard(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+          <TurnBanner turn={session.turn} reply={session.reply} />
+          {keyboard === "easy" ? (
+            <>
+              <MelodyPads
+                padOn={padOn}
+                padOff={padOff}
+                subscribe={session.subscribe}
+                currentChord={session.chord}
+                playing={playing}
+              />
+              <p className="hint">
+                どれを叩いても、いまのコードに合う音が鳴ります。右へ行くほど高い音です。コードが変わると、音も自動で入れ替わります。
+              </p>
+            </>
+          ) : (
+            <p className="hint">上の鍵盤の、鍵に書いてあるキーで12音すべてを弾けます。コードに合わない音も、そのまま鳴ります。</p>
+          )}
+        </section>
+
         <section className="chooser" aria-labelledby="chooser-heading">
           <h2 id="chooser-heading" className="visually-hidden">
             次のコードを選ぶ
@@ -210,50 +256,6 @@ export default function Page() {
                 : "開始すると、次に進めるコードが鍵の上に出ます。"}
             </p>
           </div>
-        </section>
-
-        <section className="melody" aria-labelledby="melody-heading">
-          <div className="melody-head">
-            <h2 id="melody-heading" className="jam-heading">
-              旋律を弾く
-            </h2>
-            <fieldset className="melody-mode">
-              <legend className="visually-hidden">旋律を弾く鍵盤</legend>
-              {(
-                [
-                  ["easy", "合う音だけ（A〜K）"],
-                  ["piano", "ピアノの12音"],
-                ] as const
-              ).map(([value, label]) => (
-                <label key={value} className="melody-mode-option">
-                  <input
-                    type="radio"
-                    name="keyboard"
-                    value={value}
-                    checked={keyboard === value}
-                    onChange={() => setKeyboard(value)}
-                  />
-                  {label}
-                </label>
-              ))}
-            </fieldset>
-          </div>
-          {keyboard === "easy" ? (
-            <>
-              <MelodyPads
-                padOn={padOn}
-                padOff={padOff}
-                subscribe={session.subscribe}
-                currentChord={session.chord}
-                playing={playing}
-              />
-              <p className="hint">
-                どれを叩いても、いまのコードに合う音が鳴ります。右へ行くほど高い音です。コードが変わると、音も自動で入れ替わります。
-              </p>
-            </>
-          ) : (
-            <p className="hint">上の鍵盤の、鍵に書いてあるキーで12音すべてを弾けます。コードに合わない音も、そのまま鳴ります。</p>
-          )}
         </section>
 
         <JamPad playing={playing} touch={session.touch} onTap={tap} />

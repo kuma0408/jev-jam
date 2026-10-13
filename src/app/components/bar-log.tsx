@@ -42,7 +42,7 @@ export function BarLogPanel({ log }: Pick<Session, "log">) {
                     </>
                   ) : (
                     <td colSpan={3} className="log-miss">
-                      ソロが間に合いませんでした（伴奏のみ）
+                      {entry.turn === "you" ? "あなたの番（Jevは聴いています）" : "ソロが間に合いませんでした（伴奏のみ）"}
                     </td>
                   )}
                 </tr>

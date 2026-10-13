@@ -68,6 +68,13 @@ export function ControlDock({ settings, updateSettings }: Pick<Session, "setting
           ))}
         </select>
       </label>
+      <label className="field field-check">
+        <input type="checkbox" checked={settings.trade} onChange={(event) => updateSettings({ trade: event.target.checked })} />
+        <span>
+          <span className="field-label">掛け合い</span>
+          <span className="field-note">Jevとあなたが2小節ずつ交代で弾く。外すと、Jevがずっとソロを取る</span>
+        </span>
+      </label>
     </section>
   );
 }
