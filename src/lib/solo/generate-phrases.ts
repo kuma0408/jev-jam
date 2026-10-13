@@ -482,17 +482,18 @@ export async function generatePhraseBars(
       contour: pickContour(second[`contour_second_${index}`]!.probabilities, usedSoFar),
     };
     const targetPitch = registerTarget(arcId, barInPhrase, input.range);
-    const notes = renderCells(
-      [compose(firstHalf.rhythm, firstHalf.contour), compose(secondHalf.rhythm, secondHalf.contour)],
-      chord,
-      {
-        previousPitch: heldPitch(chord),
-        ...input.range,
-        dynamics,
-        shape,
-        ...(targetPitch === undefined ? {} : { targetPitch }),
-      },
-    );
+    const composed: [Cell, Cell] = [
+      compose(firstHalf.rhythm, firstHalf.contour),
+      compose(secondHalf.rhythm, secondHalf.contour),
+    ];
+    const render = {
+      previousPitch: heldPitch(chord),
+      ...input.range,
+      dynamics,
+      shape,
+      ...(targetPitch === undefined ? {} : { targetPitch }),
+    };
+    const notes = renderCells(composed, chord, render);
     const cells = [firstHalf.rhythm.id, firstHalf.contour.id, secondHalf.rhythm.id, secondHalf.contour.id];
     return {
       chord,
@@ -519,6 +520,7 @@ export async function generatePhraseBars(
         ...(pastShapes.length > 0 ? { pastShapes } : {}),
         ...(pastArcs.length > 0 ? { pastArcs } : {}),
       },
+      plan: { cells: composed, render },
     };
   });
 }

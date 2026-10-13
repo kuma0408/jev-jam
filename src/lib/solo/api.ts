@@ -1,6 +1,8 @@
 // 画面と中継API（/api/solo）の間でやり取りする型
+import type { Cell } from "./cells.ts";
 import type { Energy, Touch } from "./energy.ts";
 import type { SlotChoice } from "./phrase.ts";
+import type { RenderOptions } from "./render-cells.ts";
 
 /**
  * Jevへの聞き方。
@@ -63,6 +65,12 @@ export type SoloBar = {
   /** この小節の最後の音の高さ。音が無ければ直前の音の高さ */
   lastPitch: number;
   memo: SoloMemo;
+  /**
+   * 同じフレーズを、別のコードの上に乗せ直すための情報。小節の途中でコードが変わったときに画面側で使う。
+   * renderCells(cells, 新しいコード, render) で、同じリズムと動きのまま新しいコードの音になる。
+   * 1音ずつ選ぶ方式には無い
+   */
+  plan?: { cells: [Cell, Cell]; render: RenderOptions };
 };
 
 export type SoloRequest = {
