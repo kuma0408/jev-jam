@@ -29,6 +29,10 @@ export type SoloMemo = {
   cells?: string[];
   /** cells の方式: 強弱 */
   dynamics?: string;
+  /** cells の方式: 直近の数小節ぶんの、コードと cells（古い順）。最後の要素が直前の小節 */
+  history?: { chord: string; cells: string[] }[];
+  /** cells の方式: 直前の小節で選ばれた、その前のフレーズとの関係 */
+  relation?: string;
   /** 1音ずつの方式: スロットごとの選択 */
   choices?: SlotChoice[];
 };
@@ -62,6 +66,8 @@ export type SoloRequest = {
   energy: Energy;
   /** ユーザーが伴奏をどれだけ叩いているか */
   touch: Touch;
+  /** 4小節のまとまりの中で、これから作る小節が何番目か（0〜3） */
+  barInPhrase: number;
   memo: SoloMemo;
 };
 

@@ -20,7 +20,55 @@ export type PhraseBarsInput = {
   energy: Energy;
   /** ユーザーが伴奏をどれだけ叩いているか */
   touch?: Touch;
+  /** 4小節のまとまりの中で、これから作る小節が何番目か（0〜3） */
+  barInPhrase?: number;
 };
+
+/** 前のフレーズとの関係。人のアドリブで「考えて吹いている」ように聞こえる部分を、Jevに選ばせる */
+export type Relation = "develop-rhythm" | "develop-melody" | "echo" | "contrast" | "space";
+
+const RELATIONS: Record<Relation, { label: string; description: string }> = {
+  "develop-rhythm": {
+    label: "リズムを引き継ぐ",
+    description: "Keep the rhythm of the previous phrase but change the notes. Sounds like developing a motif.",
+  },
+  "develop-melody": {
+    label: "音の形を引き継ぐ",
+    description: "Keep the melodic shape of the previous phrase but play it with a different rhythm.",
+  },
+  echo: {
+    label: "繰り返す",
+    description: "Repeat the previous idea over the new chord, like a sequence. Makes the solo feel intentional.",
+  },
+  contrast: {
+    label: "対照的に",
+    description: "Do something clearly different from the previous phrase. A fresh idea.",
+  },
+  space: {
+    label: "間で応える",
+    description: "Answer the previous phrase with space. Play very little and let it sink in.",
+  },
+};
+
+/** 4小節のまとまりの中の位置。Jevは数えるのが苦手なので、番号ではなく役割で伝える */
+const PHRASE_POSITIONS = [
+  "Opening bar of a new four-bar phrase. State a clear idea.",
+  "Second bar of the phrase. Continue or answer the idea just stated.",
+  "Third bar of the phrase. Build tension toward the end of the phrase.",
+  "Last bar of the four-bar phrase. Conclude the thought, or leave space to set up the next phrase.",
+];
+
+/**
+ * 「間で応える」の選ばれやすさ。Jevは間を好み、実測では15小節中6回これを選んだ。
+ * 盛り上がっているのにソロが黙ってしまわないよう、盛り上がりが高いほど選ばれにくくする
+ */
+export function spaceBias(energy: Energy): number {
+  return [1.5, 0.6, 0.3, 0.1][energy - 1]!;
+}
+
+const MAX_HISTORY = 4;
+/** 「対照的に」のとき、前の小節で使ったものに掛ける倍率 */
+const CONTRAST_PENALTY = 0.05;
 
 const DYNAMICS: Record<Dynamics, string> = {
   soft: "Quiet and intimate, almost whispered.",
@@ -117,24 +165,38 @@ export async function generatePhraseBars(
   random: () => number = Math.random,
 ): Promise<SoloBar[]> {
   const rhythms = rhythmsFor(input.bpm);
-  const recent = input.memo.cells ?? [];
-  // 送り返されたIDのうち、一覧にあるものだけを使う
-  const previousPhrase = [
-    ...RHYTHMS.filter((rhythm) => recent.includes(rhythm.id)),
-    ...CONTOURS.filter((contour) => recent.includes(contour.id)),
-  ].map((item) => item.description);
+  // 履歴が無く直前の小節だけが渡されたときは、それを1小節ぶんの履歴として扱う
+  const history = input.memo.history ?? (input.memo.cells ? [{ chord: "", cells: input.memo.cells }] : []);
+  const recent = history.at(-1)?.cells ?? [];
+
+  /** 送り返されたIDを、一覧にあるものだけ説明文に直す */
+  const describeBar = (bar: { chord: string; cells: readonly string[] }): string => {
+    const texts = [
+      ...RHYTHMS.filter((rhythm) => bar.cells.includes(rhythm.id)),
+      ...CONTOURS.filter((contour) => bar.cells.includes(contour.id)),
+    ].map((item) => item.description);
+    return `${bar.chord ? `Over ${bar.chord}: ` : ""}${texts.join(" ")}`;
+  };
 
   const baseState = {
     style: "jazz / neo soul jam session, improvised horn solo",
     tempo: `${input.bpm} BPM, ${tempoFeel(input.bpm)}`,
     bandleader_cue: ENERGY[input.energy].cue,
     ...(input.touch && input.touch !== "none" ? { accompanist: TOUCH_CUE[input.touch] } : {}),
-    previous_bar_phrase: previousPhrase.length > 0 ? previousPhrase : "nothing yet, the solo is just starting",
+    where_we_are: PHRASE_POSITIONS[input.barInPhrase ?? 0] ?? PHRASE_POSITIONS[0],
+    solo_so_far: history.length > 0 ? history.map(describeBar) : "nothing yet, the solo is just starting",
     ...(input.memo.dynamics ? { previous_bar_volume: input.memo.dynamics } : {}),
   };
 
-  const pickRhythm = (probabilities: Record<string, number>, used: readonly string[]) =>
-    rhythmById(sampleFromDistribution(biasByEnergy(penalizeRecent(probabilities, used), input.energy), random));
+  // 前の小節から引き継ぐフレーズ。前半が休みなら後半を使う
+  const [r1, c1, r2, c2] = recent;
+  const motif =
+    r1 && c1 && r1 !== REST_ID ? { rhythm: r1, contour: c1 } : r2 && c2 && r2 !== REST_ID ? { rhythm: r2, contour: c2 } : null;
+  const motifRhythm = rhythms.find((rhythm) => rhythm.id === motif?.rhythm);
+  const motifContour = CONTOURS.find((contour) => contour.id === motif?.contour);
+
+  const pickRhythm = (probabilities: Record<string, number>, used: readonly string[], energy = input.energy) =>
+    rhythmById(sampleFromDistribution(biasByEnergy(penalizeRecent(probabilities, used), energy), random));
   const pickContour = (probabilities: Record<string, number>, used: readonly string[]) =>
     contourById(sampleFromDistribution(penalizeRecent(probabilities, used), random));
 
@@ -158,12 +220,47 @@ export async function generatePhraseBars(
     "How should the intensity move within this bar?",
     Object.entries(SHAPES).map(([id, description]) => ({ id, description })),
   );
+  if (history.length > 0) {
+    firstQuestions.relation = question(
+      "How should this bar relate to the previous phrase? Good solos develop ideas instead of only stringing new ones together, but too much repetition gets dull.",
+      Object.entries(RELATIONS).map(([id, { description }]) => ({ id, description })),
+    );
+  }
 
   const first = await client.decide(baseState, firstQuestions);
-  const firstHalves = input.chords.map((_, index) => ({
-    rhythm: pickRhythm(first[`rhythm_first_${index}`]!.probabilities, recent),
-    contour: pickContour(first[`contour_first_${index}`]!.probabilities, recent),
-  }));
+  // 同じ関係が続くと単調になるので、直前に選ばれた関係は選ばれにくくする
+  const relation = first.relation
+    ? (sampleFromDistribution(
+        Object.fromEntries(
+          Object.entries(
+            penalizeRecent(first.relation.probabilities, input.memo.relation ? [input.memo.relation] : []),
+          ).map(([id, odd]) => [id, id === "space" ? odd * spaceBias(input.energy) : odd]),
+        ),
+        random,
+      ) as Relation)
+    : null;
+
+  const firstHalves = input.chords.map((_, index) => {
+    const rhythmOdds = first[`rhythm_first_${index}`]!.probabilities;
+    const contourOdds = first[`contour_first_${index}`]!.probabilities;
+    // 「対照的に」では、前の小節で使ったものをほぼ選ばせない
+    const contrasted = (odds: Record<string, number>) =>
+      Object.fromEntries(Object.entries(odds).map(([id, odd]) => [id, recent.includes(id) ? odd * CONTRAST_PENALTY : odd]));
+
+    const keepRhythm = relation === "develop-rhythm" || relation === "echo";
+    const keepContour = relation === "develop-melody" || relation === "echo";
+    const rhythm =
+      keepRhythm && motifRhythm
+        ? motifRhythm
+        : relation === "space"
+          ? pickRhythm(rhythmOdds, recent, 1)
+          : pickRhythm(relation === "contrast" ? contrasted(rhythmOdds) : rhythmOdds, recent);
+    const contour =
+      keepContour && motifContour
+        ? motifContour
+        : pickContour(relation === "contrast" ? contrasted(contourOdds) : contourOdds, recent);
+    return { rhythm, contour };
+  });
   const dynamicsBias = DYNAMICS_BIAS[input.energy];
   const dynamics = sampleFromDistribution(
     Object.fromEntries(
@@ -211,17 +308,24 @@ export async function generatePhraseBars(
       chord,
       { previousPitch: input.previousPitch, ...input.range, dynamics, shape },
     );
+    const cells = [firstHalf.rhythm.id, firstHalf.contour.id, secondHalf.rhythm.id, secondHalf.contour.id];
     return {
       chord,
       notes,
       summary: `${label(firstHalf.rhythm, firstHalf.contour)} + ${label(secondHalf.rhythm, secondHalf.contour)}`,
-      details: `強弱 ${dynamics} / ${shape} / 盛り上がり ${ENERGY[input.energy].label}`,
+      details: [
+        `強弱 ${dynamics} / ${shape}`,
+        `盛り上がり ${ENERGY[input.energy].label}`,
+        ...(relation ? [`前との関係 ${RELATIONS[relation].label}`] : []),
+      ].join(" / "),
       latencyMs,
       calls: 2,
       lastPitch: notes.at(-1)?.pitch ?? input.previousPitch,
       memo: {
-        cells: [firstHalf.rhythm.id, firstHalf.contour.id, secondHalf.rhythm.id, secondHalf.contour.id],
+        cells,
         dynamics,
+        history: [...history.filter((bar) => bar.chord !== ""), { chord, cells }].slice(-MAX_HISTORY),
+        ...(relation ? { relation } : {}),
       },
     };
   });

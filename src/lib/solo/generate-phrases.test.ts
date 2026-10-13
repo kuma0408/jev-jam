@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChoiceAnswer, DecisionClient } from "../jev/client.ts";
 import { contourById } from "./contours.ts";
-import { biasByEnergy, generatePhraseBars, penalizeRecent } from "./generate-phrases.ts";
+import { biasByEnergy, generatePhraseBars, penalizeRecent, spaceBias } from "./generate-phrases.ts";
 import { RHYTHMS, rhythmById } from "./rhythms.ts";
 
 /** 質問ごとに決めた選択肢へ確率1を返し、呼び出しを記録するクライアント */
@@ -238,6 +238,15 @@ describe("penalizeRecent", () => {
 
   it("休みは下げない（間は繰り返してよい）", () => {
     expect(penalizeRecent({ "r-rest": 0.5, "r-half": 0.5 }, ["r-rest"])["r-rest"]).toBe(0.5);
+  });
+});
+
+describe("spaceBias", () => {
+  it("盛り上がりが高いほど、「間で応える」を選ばれにくくする", () => {
+    expect(spaceBias(1)).toBeGreaterThan(spaceBias(2));
+    expect(spaceBias(2)).toBeGreaterThan(spaceBias(3));
+    expect(spaceBias(3)).toBeGreaterThan(spaceBias(4));
+    expect(spaceBias(4)).toBeGreaterThan(0);
   });
 });
 

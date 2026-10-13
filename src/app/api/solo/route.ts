@@ -12,6 +12,8 @@ import { HOLD, REST } from "../../../lib/solo/questions.ts";
 const SLOT_CHOICES: readonly string[] = [...NOTE_NAMES, REST, HOLD];
 const MAX_CHORDS = 8;
 const MAX_MEMO_CELLS = 4;
+const MAX_MEMO_HISTORY = 4;
+const BARS_PER_PHRASE = 4;
 
 export async function POST(request: Request): Promise<Response> {
   const body = parseRequest(await request.json().catch(() => null));
@@ -52,6 +54,7 @@ async function generateAll(client: DecisionClient, body: SoloRequest): Promise<P
         memo: body.memo,
         energy: body.energy,
         touch: body.touch,
+        barInPhrase: body.barInPhrase,
       });
       return bars.map((value) => ({ status: "fulfilled", value }));
     } catch (reason) {
@@ -77,15 +80,37 @@ function isMidiPitch(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 127;
 }
 
+function isCellIds(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_MEMO_CELLS &&
+    value.every((cell) => typeof cell === "string" && /^[a-z0-9-]{1,40}$/.test(cell))
+  );
+}
+
 function parseMemo(value: unknown): SoloMemo | null {
   if (typeof value !== "object" || value === null) return null;
-  const { cells, dynamics, choices } = value as Record<string, unknown>;
+  const { cells, dynamics, choices, history, relation } = value as Record<string, unknown>;
   const memo: SoloMemo = {};
 
   if (cells !== undefined) {
-    if (!Array.isArray(cells) || cells.length > MAX_MEMO_CELLS) return null;
-    if (!cells.every((cell) => typeof cell === "string" && /^[a-z0-9-]{1,40}$/.test(cell))) return null;
+    if (!isCellIds(cells)) return null;
     memo.cells = cells;
+  }
+  if (history !== undefined) {
+    if (!Array.isArray(history) || history.length > MAX_MEMO_HISTORY) return null;
+    const bars: NonNullable<SoloMemo["history"]> = [];
+    for (const entry of history) {
+      if (typeof entry !== "object" || entry === null) return null;
+      const { chord, cells: barCells } = entry as Record<string, unknown>;
+      if (typeof chord !== "string" || !KNOWN_CHORDS.includes(chord) || !isCellIds(barCells)) return null;
+      bars.push({ chord, cells: barCells });
+    }
+    memo.history = bars;
+  }
+  if (relation !== undefined) {
+    if (typeof relation !== "string" || !/^[a-z-]{1,20}$/.test(relation)) return null;
+    memo.relation = relation;
   }
   if (dynamics !== undefined) {
     if (typeof dynamics !== "string" || !/^[a-z-]{1,20}$/.test(dynamics)) return null;
@@ -101,7 +126,7 @@ function parseMemo(value: unknown): SoloMemo | null {
 
 function parseRequest(value: unknown): SoloRequest | null {
   if (typeof value !== "object" || value === null) return null;
-  const { chords, strategy, bpm, previousPitch, range, energy, touch } = value as Record<string, unknown>;
+  const { chords, strategy, bpm, previousPitch, range, energy, touch, barInPhrase } = value as Record<string, unknown>;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) return null;
   if (!chords.every((chord) => typeof chord === "string" && KNOWN_CHORDS.includes(chord))) return null;
@@ -112,6 +137,9 @@ function parseRequest(value: unknown): SoloRequest | null {
   if (!isEnergy(energy)) return null;
   const touchValue = TOUCHES.find((option) => option === touch);
   if (!touchValue) return null;
+  if (typeof barInPhrase !== "number" || !Number.isInteger(barInPhrase) || barInPhrase < 0 || barInPhrase >= BARS_PER_PHRASE) {
+    return null;
+  }
 
   if (typeof range !== "object" || range === null) return null;
   const { low, high } = range as Record<string, unknown>;
@@ -120,5 +148,5 @@ function parseRequest(value: unknown): SoloRequest | null {
   const memo = parseMemo((value as Record<string, unknown>).memo);
   if (!memo) return null;
 
-  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, touch: touchValue, memo };
+  return { chords: [...new Set(chords as string[])], strategy: strategyValue, bpm, previousPitch, range: { low, high }, energy, touch: touchValue, barInPhrase, memo };
 }

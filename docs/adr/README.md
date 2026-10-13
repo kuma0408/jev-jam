@@ -19,3 +19,7 @@
 | [0013](0013-white-ui-with-reactive-particles.md) | 画面を白基調に作り直し、音に反応する粒子の背景を置く | 工夫 | Accepted | 2026-10-13 |
 | [0014](0014-rhythm-and-contour-chosen-separately.md) | ソロは「リズム」と「音の動き」を別々に選ばせて組み合わせる | 設計判断 | Accepted | 2026-10-13 |
 | [0015](0015-energy-dial-and-instant-feedback.md) | 盛り上がりのつまみと、押した瞬間の音で「操っている感」を出す | 設計判断 | Accepted | 2026-10-13 |
+| [0016](0016-at-least-three-chord-choices.md) | コードの候補は常に3つ以上出し、「とどまる」も選べるようにする | 設計判断 | Accepted | 2026-10-13 |
+| [0017](0017-scoop-with-own-sample-player.md) | ソロの音に「しゃくり」を付けるため、音源の鳴らし方を自前で持つ | 工夫 | Accepted | 2026-10-13 |
+| [0018](0018-user-plays-along.md) | ユーザーが自分でも音を出せるようにし、その叩き方にバンドが応える | 設計判断 | Accepted | 2026-10-13 |
+| [0019](0019-solo-follows-its-own-history.md) | ソロに、これまでの流れと「前のフレーズとの関係」を持たせる | 設計判断 | Accepted | 2026-10-13 |

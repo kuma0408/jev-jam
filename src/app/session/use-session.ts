@@ -221,6 +221,8 @@ export function useSession(): Session {
         range: SOLO_INSTRUMENTS[voice].range,
         energy: liveEnergy(dial, taps),
         touch: touchOf(taps),
+        // これから作るのは、いまの小節の次の小節。4小節のまとまりの中の位置を伝える
+        barInPhrase: engine.bar % 4,
         memo,
       })
         .then((response) => {
