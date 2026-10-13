@@ -10,9 +10,8 @@ import { parseArgs } from "node:util";
 import { type DecisionClient, createJevClient, createMockClient } from "../src/lib/jev/client.ts";
 import { type MidiNote, writeMidi } from "../src/lib/midi/write.ts";
 import { chordTones, pitchClassOf } from "../src/lib/music/chord.ts";
-import { sampleFromDistribution } from "../src/lib/music/sample.ts";
+import { type BarResult, SLOTS_PER_BAR, type Strategy, generateBar } from "../src/lib/solo/generate.ts";
 import { type SlotChoice, toNoteEvents } from "../src/lib/solo/phrase.ts";
-import { buildPlanQuestions, buildSlotQuestions } from "../src/lib/solo/questions.ts";
 
 const { values } = parseArgs({ options: { bars: { type: "string", default: "8" }, bpm: { type: "string", default: "120" } } });
 const BARS = Number(values.bars);
@@ -20,62 +19,19 @@ const BPM = Number(values.bpm);
 
 // II-V-I-VI の循環進行
 const PROGRESSION = ["Dm7", "G7", "Cmaj7", "A7"];
-const SLOTS_PER_BAR = 8;
 const TICKS_PER_BEAT = 480;
 const TICKS_PER_SLOT = (TICKS_PER_BEAT * 4) / SLOTS_PER_BAR;
 const BAR_MS = (60_000 / BPM) * 4;
 const SOLO_RANGE = { low: 60, high: 86 };
 
-type Strategy = "batch" | "two-stage";
-
-type BarResult = {
-  chord: string;
-  latencyMs: number;
-  calls: number;
-  choices: SlotChoice[];
-  plan?: Record<string, string>;
-  /** スロット平均の、最上位の確率・休符の確率・伸ばす確率 */
-  stats: { top: number; rest: number; hold: number };
-};
-
-async function playBar(client: DecisionClient, strategy: Strategy, bar: number, previousBar: SlotChoice[]): Promise<BarResult> {
-  const chord = PROGRESSION[bar % PROGRESSION.length]!;
-  const baseState = {
-    style: "jazz / neo soul jam session",
-    tempo_bpm: BPM,
-    current_chord: chord,
-    next_chord: PROGRESSION[(bar + 1) % PROGRESSION.length]!,
-    previous_bar_solo: previousBar,
-  };
-
-  const startedAt = performance.now();
-  let calls = 1;
-  let plan: Record<string, string> | undefined;
-  let state: object = baseState;
-
-  if (strategy === "two-stage") {
-    // 1回目: フレーズの方針を決める。2回目のstateに入れて、各スロットの判断を揃えさせる
-    const planAnswers = await client.decide(baseState, buildPlanQuestions(chord));
-    plan = Object.fromEntries(
-      Object.entries(planAnswers).map(([id, answer]) => [id, sampleFromDistribution(answer.probabilities)]),
-    );
-    state = { ...baseState, phrase_plan: plan };
-    calls = 2;
-  }
-
-  const answers = await client.decide(state, buildSlotQuestions(chord, SLOTS_PER_BAR));
-  const latencyMs = performance.now() - startedAt;
-
-  const choices: SlotChoice[] = [];
-  const stats = { top: 0, rest: 0, hold: 0 };
-  for (let slot = 0; slot < SLOTS_PER_BAR; slot++) {
-    const { probabilities } = answers[`slot_${slot}`]!;
-    choices.push(sampleFromDistribution(probabilities) as SlotChoice);
-    stats.top += Math.max(...Object.values(probabilities)) / SLOTS_PER_BAR;
-    stats.rest += (probabilities.rest ?? 0) / SLOTS_PER_BAR;
-    stats.hold += (probabilities.hold ?? 0) / SLOTS_PER_BAR;
-  }
-  return { chord, latencyMs, calls, choices, stats, ...(plan ? { plan } : {}) };
+function playBar(client: DecisionClient, strategy: Strategy, bar: number, previousBar: SlotChoice[]): Promise<BarResult> {
+  return generateBar(client, {
+    strategy,
+    chord: PROGRESSION[bar % PROGRESSION.length]!,
+    nextChord: PROGRESSION[(bar + 1) % PROGRESSION.length]!,
+    bpm: BPM,
+    previousBar,
+  });
 }
 
 async function run(client: DecisionClient, strategy: Strategy): Promise<void> {
