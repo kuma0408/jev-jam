@@ -25,8 +25,10 @@ export type Rhythm = {
   energy: Energy;
   /** true ならスウィングさせない */
   straight?: boolean;
-  /** 16分音符を含むリズム。均等に刻み、遅いテンポほど選ばれやすくする */
+  /** 16分音符を含むリズム。均等に刻む */
   sixteenths?: boolean;
+  /** 半小節を16分音符でほぼ埋める「走る」リズム。選ばれたら1〜2小節続けて、伸ばす音との対比を作る */
+  run?: boolean;
 };
 
 const ALL: readonly TempoBand[] = ["slow", "medium", "fast"];
@@ -305,20 +307,32 @@ export const RHYTHMS: readonly Rhythm[] = [
     ],
   },
   {
-    id: "r-sixteenth-six",
+    id: "r-sixteenth-run-land",
     bands: ["slow"],
-    energy: 4,
+    energy: 3,
     straight: true,
     sixteenths: true,
+    run: true,
+    description: "Six fast, even sixteenth notes that land on an accented note at the end. A double-time run with a clear arrival.",
+    hits: [...run(6, 0.25), { at: 1.5, dur: 0.5, accent: "accent" }],
+  },
+  {
+    id: "r-sixteenth-six",
+    bands: ["slow"],
+    energy: 3,
+    straight: true,
+    sixteenths: true,
+    run: true,
     description: "Rest for a moment, then six even sixteenth notes surging forward. Double-time feel.",
     hits: run(6, 0.25, 0.5),
   },
   {
     id: "r-sixteenth-run",
     bands: ["slow"],
-    energy: 4,
+    energy: 3,
     straight: true,
     sixteenths: true,
+    run: true,
     description: "Eight fast, perfectly even sixteenth notes. A double-time run over the slow beat, sheets of sound.",
     hits: run(8, 0.25),
   },
@@ -378,15 +392,65 @@ export function rhythmsFor(bpm: number): Rhythm[] {
   return RHYTHMS.filter((rhythm) => rhythm.bands.includes(band));
 }
 
-/** テンポ帯ごとの、16分音符のリズムに掛ける倍率。ゆったりした拍の上で細かく動くと映える */
-const SIXTEENTH_BOOST: Record<TempoBand, number> = { slow: 2.5, medium: 1.5, fast: 1 };
-const SIXTEENTH_IDS = new Set(RHYTHMS.filter((rhythm) => rhythm.sixteenths).map((rhythm) => rhythm.id));
+/**
+ * テンポ帯ごとの、16分音符のリズムに掛ける倍率。
+ * run: 半小節を埋めて走るリズム / snippet: 長い音に3〜4個の16分音符を添えるだけのリズム。
+ * 聴いた評価で、16分音符がぱらぱら入って止まるのが多く、メリハリが無かった。走るリズムを増やし、添えるだけのものは減らす
+ */
+const SIXTEENTH_BOOST: Record<TempoBand, { run: number; snippet: number }> = {
+  slow: { run: 5, snippet: 0.6 },
+  medium: { run: 1.5, snippet: 0.9 },
+  fast: { run: 1, snippet: 1 },
+};
+const RHYTHM_LOOKUP = new Map(RHYTHMS.map((rhythm) => [rhythm.id, rhythm]));
 
-/** 16分音符のリズムを選ばれやすくする。バラードの中にも、ときどき細かい動きが入るようにするため */
+/** 16分音符のリズムのうち、走るものを選ばれやすく、添えるだけのものを選ばれにくくする */
 export function boostSixteenths(probabilities: Record<string, number>, bpm: number): Record<string, number> {
   const boost = SIXTEENTH_BOOST[tempoBand(bpm)];
   return Object.fromEntries(
-    Object.entries(probabilities).map(([id, probability]) => [id, SIXTEENTH_IDS.has(id) ? probability * boost : probability]),
+    Object.entries(probabilities).map(([id, probability]) => {
+      const rhythm = RHYTHM_LOOKUP.get(id);
+      const factor = rhythm?.run ? boost.run : rhythm?.sixteenths ? boost.snippet : 1;
+      return [id, probability * factor];
+    }),
+  );
+}
+
+/** 走り出したら、この倍率で走るリズムを選ばれやすくする */
+const KEEP_RUNNING_FACTOR = 6;
+/** 半小節いくつぶん走ったら、止まりやすくするか（4つで2小節） */
+const MAX_RUN_HALVES = 4;
+const STOP_RUNNING_FACTOR = 0.15;
+
+/**
+ * 走り出したら、しばらく走り続けるようにする。
+ *
+ * @param consecutiveRuns 直前まで、半小節いくつぶん続けて走っているか
+ */
+export function keepRunning(probabilities: Record<string, number>, consecutiveRuns: number): Record<string, number> {
+  if (consecutiveRuns <= 0) return probabilities;
+  const factor = consecutiveRuns >= MAX_RUN_HALVES ? STOP_RUNNING_FACTOR : KEEP_RUNNING_FACTOR;
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => [
+      id,
+      RHYTHM_LOOKUP.get(id)?.run ? probability * factor : probability,
+    ]),
+  );
+}
+
+/** 1音を伸ばすだけのリズムに掛ける倍率 */
+const LONG_NOTE_FACTOR = 0.4;
+/** これ以上の長さの1音だけのリズムを、伸ばすだけのリズムとみなす（拍） */
+const LONG_NOTE_BEATS = 1;
+
+/** 伸ばすだけのリズムを選ばれにくくする。聴いた評価で、伸ばしが多いのが目立った */
+export function holdBackLongNotes(probabilities: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => {
+      const hits = RHYTHM_LOOKUP.get(id)?.hits;
+      const longOnly = hits?.length === 1 && hits[0]!.dur >= LONG_NOTE_BEATS;
+      return [id, longOnly ? probability * LONG_NOTE_FACTOR : probability];
+    }),
   );
 }
 

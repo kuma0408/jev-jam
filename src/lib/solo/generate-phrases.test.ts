@@ -459,15 +459,15 @@ describe("generatePhraseBars（4小節の形と高さの流れ）", () => {
 });
 
 describe("generatePhraseBars（16分音符で走り続ける）", () => {
-  /** 2つの選択肢に同じ確率を置くクライアント。抽選は乱数で決まる */
-  function evenClient(ids: Record<string, string[]>) {
+  /** 質問ごとに、決めた確率で選択肢を返すクライアント。抽選は乱数で決まる */
+  function weightedClient(weights: Record<string, Record<string, number>>) {
     const client: DecisionClient = {
       name: "fake",
       async decide(_state, questions) {
         const answers: Record<string, ChoiceAnswer> = {};
         for (const [id, question] of Object.entries(questions)) {
-          const options = ids[id] ?? [Object.keys(question.criteria)[0]!];
-          answers[id] = { choice: options[0]!, probabilities: Object.fromEntries(options.map((option) => [option, 1 / options.length])) };
+          const probabilities = weights[id] ?? { [Object.keys(question.criteria)[0]!]: 1 };
+          answers[id] = { choice: Object.keys(probabilities)[0]!, probabilities };
         }
         return answers;
       },
@@ -475,33 +475,53 @@ describe("generatePhraseBars（16分音符で走り続ける）", () => {
     return client;
   }
   const slow = { ...input, bpm: 72, barInPhrase: 1, memo: { shape: "p-relentless", arc: "a-middle" } };
-  const choices = { rhythm_first_0: ["r-two-quarters"], rhythm_second_0: ["r-two-quarters", "r-sixteenth-run"] };
-  /** 後半で走るリズムが選ばれた割合 */
-  const runRate = async (first: string) => {
-    let runs = 0;
-    for (let i = 0; i < 200; i++) {
-      const [bar] = await generatePhraseBars(evenClient({ ...choices, rhythm_first_0: [first] }), slow);
-      if (bar!.memo.cells![2] === "r-sixteenth-run") runs++;
-    }
-    return runs / 200;
-  };
+  // Jevは走るリズムにあまり確率を置いていない、という状況
+  const mostlyCalm = { "r-charleston": 0.95, "r-sixteenth-run": 0.05 };
+  const TRIALS = 300;
 
   it("前半が走っていたら、後半も走るリズムが選ばれやすい（1小節まるごと走る）", async () => {
-    expect(await runRate("r-sixteenth-run")).toBeGreaterThan((await runRate("r-two-quarters")) + 0.15);
+    const runRate = async (first: string) => {
+      let runs = 0;
+      for (let i = 0; i < TRIALS; i++) {
+        const client = weightedClient({ rhythm_first_0: { [first]: 1 }, rhythm_second_0: mostlyCalm });
+        const [bar] = await generatePhraseBars(client, slow);
+        if (bar!.memo.cells![2] === "r-sixteenth-run") runs++;
+      }
+      return runs / TRIALS;
+    };
+    expect(await runRate("r-sixteenth-run")).toBeGreaterThan((await runRate("r-two-quarters")) + 0.2);
   });
 
   it("前の小節の後半が走っていたら、この小節の前半も走るリズムが選ばれやすい（小節をまたいで走る）", async () => {
-    const rate = async (previousSecond: string) => {
+    const runRate = async (previousSecond: string) => {
       let runs = 0;
       const history = [{ chord: "Cmaj7", cells: ["r-two-quarters", "c-arch", previousSecond, "c-rise-from-third"] }];
-      for (let i = 0; i < 200; i++) {
-        const client = evenClient({ rhythm_first_0: ["r-two-quarters", "r-sixteenth-run"], relation: ["contrast"] });
+      for (let i = 0; i < TRIALS; i++) {
+        const client = weightedClient({ rhythm_first_0: mostlyCalm, relation: { contrast: 1 } });
         const [bar] = await generatePhraseBars(client, { ...slow, memo: { ...slow.memo, history } });
         if (bar!.memo.cells![0] === "r-sixteenth-run") runs++;
       }
-      return runs / 200;
+      return runs / TRIALS;
     };
-    expect(await rate("r-sixteenth-run")).toBeGreaterThan((await rate("r-half")) + 0.15);
+    expect(await runRate("r-sixteenth-run")).toBeGreaterThan((await runRate("r-half")) + 0.2);
+  });
+
+  it("2小節走り続けた後は、走るリズムが選ばれにくくなる（伸ばす音との対比に戻る）", async () => {
+    const runRate = async (bars: number) => {
+      let runs = 0;
+      const history = Array.from({ length: bars }, () => ({
+        chord: "Cmaj7",
+        cells: ["r-sixteenth-run", "c-arch", "r-sixteenth-run", "c-rise-from-third"],
+      }));
+      for (let i = 0; i < TRIALS; i++) {
+        const client = weightedClient({ rhythm_first_0: mostlyCalm, relation: { contrast: 1 } });
+        const [bar] = await generatePhraseBars(client, { ...slow, memo: { ...slow.memo, history } });
+        if (bar!.memo.cells![0] === "r-sixteenth-run") runs++;
+      }
+      return runs / TRIALS;
+    };
+    // 1小節走った後は続きやすく、2小節走った後は止まりやすい
+    expect(await runRate(1)).toBeGreaterThan((await runRate(2)) + 0.3);
   });
 });
 

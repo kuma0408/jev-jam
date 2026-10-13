@@ -21,7 +21,9 @@ import {
   TIE_RHYTHMS,
   boostSixteenths,
   favorDownbeat,
+  holdBackLongNotes,
   holdBackTies,
+  keepRunning,
   leadsOut,
   rhythmById,
   rhythmsFor,
@@ -261,16 +263,28 @@ export async function generatePhraseBars(
   const allowed = (rhythm: Rhythm, constraint: Constraint) => constraint.allowRest || rhythm.id !== REST_ID;
   const unconstrained: Constraint = { allowRest: true };
 
+  const allRhythms = [...RHYTHMS, ...TIE_RHYTHMS];
+  const isRun = (id: string | undefined) => allRhythms.find((rhythm) => rhythm.id === id)?.run === true;
+  /** 直前まで、半小節いくつぶん続けて16分音符で走っているか */
+  const runsBefore = (() => {
+    const halves = history.flatMap((bar) => [bar.cells[0], bar.cells[2]]);
+    let count = 0;
+    while (count < halves.length && isRun(halves[halves.length - 1 - count])) count++;
+    return count;
+  })();
+
   const pickRhythm = (
     probabilities: Record<string, number>,
     used: readonly string[],
     energy = input.energy,
     constraint = unconstrained,
+    runs = 0,
   ): Rhythm => {
+    // 走っている最中は、走るリズムを「最近使ったから」と下げない。続けて走らせるため
+    const penalized = penalizeRecent(probabilities, runs > 0 ? used.filter((id) => !isRun(id)) : used);
+    const shaped = holdBackLongNotes(keepRunning(boostSixteenths(penalized, input.bpm), runs));
     const odds = Object.fromEntries(
-      Object.entries(biasByEnergy(boostSixteenths(penalizeRecent(probabilities, used), input.bpm), energy)).filter(
-        ([id, odd]) => odd > 0 && allowed(rhythmById(id), constraint),
-      ),
+      Object.entries(biasByEnergy(shaped, energy)).filter(([id, odd]) => odd > 0 && allowed(rhythmById(id), constraint)),
     );
     // 縛りに合うものにJevが確率を置いていなければ、縛りに合う最初のリズムにする
     return Object.keys(odds).length > 0
@@ -369,8 +383,14 @@ export async function generatePhraseBars(
     const rhythmOdds = first[`rhythm_first_${index}`]!.probabilities;
     const contourOdds = first[`contour_first_${index}`]!.probabilities;
     // 「対照的に」では、前の小節で使ったものをほぼ選ばせない
+    // 走っている最中の走るリズムは、対照の対象から外す（走り続けるほうを優先する）
     const contrasted = (odds: Record<string, number>) =>
-      Object.fromEntries(Object.entries(odds).map(([id, odd]) => [id, recent.includes(id) ? odd * CONTRAST_PENALTY : odd]));
+      Object.fromEntries(
+        Object.entries(odds).map(([id, odd]) => [
+          id,
+          recent.includes(id) && !(runsBefore > 0 && isRun(id)) ? odd * CONTRAST_PENALTY : odd,
+        ]),
+      );
 
     // 形が「休む」としている場所では休む。前の小節が次へつなぐ形で終わっていても、形が決めたフレーズの終わりを守る
     const resting = slotAt(0) === false;
@@ -386,8 +406,10 @@ export async function generatePhraseBars(
       used,
       input.energy,
       constraint,
+      runsBefore,
     );
-    const rhythm = sampled.hits[0]?.tie
+    // 持ち越しと、走り続ける選択は、前との関係より優先する
+    const rhythm = sampled.hits[0]?.tie || (runsBefore > 0 && sampled.run && !resting)
       ? sampled
       : resting
         ? rhythmById(REST_ID)
@@ -449,7 +471,14 @@ export async function generatePhraseBars(
       rhythm:
         slotAt(1) === false
           ? rhythmById(REST_ID)
-          : pickRhythm(second[`rhythm_second_${index}`]!.probabilities, usedSoFar, input.energy, constraintFor(1)),
+          : pickRhythm(
+              second[`rhythm_second_${index}`]!.probabilities,
+              usedSoFar,
+              input.energy,
+              constraintFor(1),
+              // 前半が走っていれば、後半も走りやすくする（1小節まるごと走る）
+              firstHalf.rhythm.run ? runsBefore + 1 : 0,
+            ),
       contour: pickContour(second[`contour_second_${index}`]!.probabilities, usedSoFar),
     };
     const targetPitch = registerTarget(arcId, barInPhrase, input.range);

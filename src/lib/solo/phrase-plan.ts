@@ -30,10 +30,21 @@ export const PHRASE_SHAPES: readonly PhraseShape[] = [
   shape("p-two-by-two", "2小節ずつ", "xx x. xx x.", "Two matching two-bar phrases, each ending with a short breath."),
   shape("p-relentless", "吹き続ける", "xx xx xx x.", "Nearly continuous playing through all four bars, with one short breath at the very end."),
   shape("p-scattered", "ぽつりぽつり", ".x .. x. .x", "Only a few scattered short entries, surrounded by silence."),
+  shape("p-breath-before-the-end", "終わりの前に一息", "xx xx x. xx", "A long line, one short breath, then a strong finish."),
+  shape("p-pause-then-push", "溜めて押す", "xx xx .x xx", "A long line, a short held-back pause, then push through to the end."),
+  shape("p-answering", "受け答え", "x. xx xx x.", "A short opening remark answered by a long, flowing reply."),
 ];
 
 /** 盛り上がりごとの、吹く場所の数の目安（8か所のうち） */
-const DENSITY_TARGET: Record<Energy, number> = { 1: 3.5, 2: 5, 3: 6, 4: 7 };
+// 以前は 3.5 / 5 / 6 / 7 で、「ゆったり」では小節の4分の1が無音になり、間が多すぎた
+const DENSITY_TARGET: Record<Energy, number> = { 1: 5, 2: 6.5, 3: 7.5, 4: 8 };
+/**
+ * 盛り上がりごとの、吹く場所の数の下限。これより少ない形は、ほぼ選ばせない。
+ * 目安へ寄せるだけでは足りなかった。Jevは間の多い形を好み、最近使った形を避ける仕組みも重なって、
+ * 「ゆったり」で休みが3割を超えたままだった
+ */
+const DENSITY_FLOOR: Record<Energy, number> = { 1: 5, 2: 6, 3: 6, 4: 7 };
+const BELOW_FLOOR_FACTOR = 0.03;
 const SHAPES_BY_ID = new Map(PHRASE_SHAPES.map((entry) => [entry.id, entry]));
 
 export function phraseShapeById(id: string | undefined): PhraseShape | undefined {
@@ -46,8 +57,8 @@ export function biasShapesByEnergy(probabilities: Record<string, number>, energy
     Object.entries(probabilities).map(([id, probability]) => {
       const density = SHAPES_BY_ID.get(id)?.slots.filter(Boolean).length ?? DENSITY_TARGET[energy];
       const distance = density - DENSITY_TARGET[energy];
-      // 寄せすぎると、盛り上がりごとに2〜3種類の形しか出なくなる
-      return [id, probability / (1 + 0.5 * distance * distance)];
+      const floor = density < DENSITY_FLOOR[energy] ? BELOW_FLOOR_FACTOR : 1;
+      return [id, (probability * floor) / (1 + distance * distance)];
     }),
   );
 }
