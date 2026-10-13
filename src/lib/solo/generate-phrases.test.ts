@@ -97,6 +97,15 @@ describe("generatePhraseBars", () => {
     expect(calm.calls[0]!.state.bandleader_cue).not.toEqual(intense.calls[0]!.state.bandleader_cue);
   });
 
+  it("ユーザーが伴奏を叩いていれば、その様子をJevに伝える", async () => {
+    const quiet = scriptedClient(picks);
+    const busy = scriptedClient(picks);
+    await generatePhraseBars(quiet.client, input);
+    await generatePhraseBars(busy.client, { ...input, touch: "busy" });
+    expect(quiet.calls[0]!.state.accompanist).toBeUndefined();
+    expect(String(busy.calls[0]!.state.accompanist)).toMatch(/busily/);
+  });
+
   it("画面用の要約と、次の依頼に渡すメモを返す", async () => {
     const { client } = scriptedClient(picks);
     const [bar] = await generatePhraseBars(client, input);
