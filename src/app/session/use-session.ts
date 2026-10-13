@@ -52,8 +52,6 @@ export type SessionSettings = {
   energy: Energy;
 };
 
-/** 鍵盤とは別に、ユーザーが自分で弾ける「いまのコードの音」の数 */
-export const JAM_TONE_COUNT = 4;
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
 const JAM_TONE_BASE = 72;
 /** 自分で弾く音を、自動の伴奏よりどれだけ大きくするか（dB）。8では大きすぎた */
@@ -91,13 +89,12 @@ export type Session = {
   candidates: ChordCandidate[];
   /** 次の小節に進む予定のコード */
   nextChord: string | null;
-  /** nextChord をユーザーが選んだか（false なら既定の候補） */
+  /** nextChord をユーザーが決めたか（false なら既定の候補へ自動で進む） */
   chosenByUser: boolean;
-  /** 締切（4拍目の頭）を過ぎて、次のコードが確定しているか。確定後は choose しても変わらない */
-  locked: boolean;
   /**
    * コードを弾く。押した瞬間にそのコードが鳴り、バンドは次の拍からそのコードへ切り替わる。
-   * 次に進めるコード（candidates）のどれかを渡す。1小節に弾けるのは1回で、弾いた後は locked になる
+   * 次に進めるコード（candidates）のどれかを渡す。いつでも、何度でも弾ける。
+   * 弾いた小節の次の小節は、自動では進まず、そのコードを続ける
    */
   choose: (chord: string) => void;
   /** choose で押さえたコードの音を止める。鍵やキーを離したときに呼ぶ */
@@ -113,10 +110,12 @@ export type Session = {
   subscribe: (listener: (event: SessionEvent) => void) => () => void;
   /** いまのコードを、押した瞬間に鳴らす（伴奏を自分で刻む）。刻んでいる間、自動の伴奏は黙る */
   tap: () => void;
-  /** いまのコードの構成音を1つ鳴らす（合いの手を自分で入れる）。index は 0〜JAM_TONE_COUNT-1 */
-  playTone: (index: number) => void;
-  /** playTone で鳴る音の名前。停止中は空 */
-  tones: string[];
+  /**
+   * 鍵盤の音を1つ鳴らす。pitchClass は 0=C … 11=B。いつでも、どの音でも、押した音がそのまま鳴る。
+   * noteOff を呼ぶまで鳴り続ける
+   */
+  noteOn: (pitchClass: number) => void;
+  noteOff: (pitchClass: number) => void;
   /** つまみの値に、ユーザーの叩き方を足した実際の盛り上がり。ソロと伴奏はこれに応える */
   liveEnergy: Energy;
   /** ユーザーが直近1小節にどれだけ叩いたか */
@@ -184,16 +183,23 @@ type Engine = {
   held: HeldNote | null;
   /** held の音の高さ */
   heldPitch: number;
-  /** 締切で確定した次のコード。締切の前は null */
-  locked: { chord: string; byUser: boolean } | null;
+  /**
+   * この小節でユーザーがコードを弾いたか（同じコードにとどまる、も含む）。
+   * 弾いていれば、次の小節の頭では自動で進まず、そのコードを続ける
+   */
+  heldOver: boolean;
+  /** ユーザーが押さえている鍵盤の音（ピッチクラス → 周波数）。離したときに止める */
+  heldNotes: Map<number, number>;
+  /** 盛り上がりが変わって、次の小節のソロを作り直した小節の番号。同じ小節では二度作り直さない */
+  repreparedBar: number;
+  /** 次の小節のために用意できたソロのどれか1つ。用意していないコードへ進んだとき、同じフレーズをそのコードに乗せ直す */
+  preparedAny: SoloBar | null;
   /** いまの小節の演奏の計画。1拍ごとに、ここから音を予約する */
   now: BarPlan | null;
   /** 再生を始めてからの拍の通し番号 */
   beatCount: number;
   /** ユーザーが弾いたコード。次の拍でバンドがこのコードへ切り替わる */
   pendingSwitch: string | null;
-  /** 前の小節の途中で、次のコードへ先に切り替えたか。そうなら小節の頭ではコードを進めない */
-  switchedEarly: boolean;
   /** ユーザーが押さえているコードの音（周波数）。離したときに止める */
   pressed: number[] | null;
   /** 次の小節を依頼するときに渡す、直前の小節の記録 */
@@ -224,6 +230,32 @@ async function requestSolos(request: SoloRequest): Promise<SoloResponse> {
 function replay(seeds: readonly number[]): () => number {
   let index = 0;
   return () => seeds[index++ % seeds.length]!;
+}
+
+/**
+ * 用意してあるソロと同じフレーズを、別のコードの上に乗せ直す。
+ * フレーズ（リズムと動き）はコードによらないので、Jevを呼び直さずに作れる。
+ *
+ * @param heldPitch 前の小節から鳴り続けている音の高さ。鳴っていなければ null
+ */
+function transplant(source: SoloBar | null, chord: string, heldPitch: number | null): SoloBar | null {
+  if (!source?.plan) return null;
+  const render = {
+    ...source.plan.render,
+    ...(heldPitch === null ? {} : { previousPitch: heldPitch }),
+    // 鳴っている音がこのコードに合うときだけ持ち越す
+    allowTie: heldPitch !== null && fitsChord(heldPitch, chord),
+  };
+  const notes = renderCells(source.plan.cells, chord, render);
+  const history = source.memo.history?.map((bar, index, bars) => (index === bars.length - 1 ? { ...bar, chord } : bar));
+  return {
+    ...source,
+    chord,
+    notes,
+    lastPitch: notes.at(-1)?.pitch ?? render.previousPitch,
+    memo: { ...source.memo, ...(history ? { history } : {}) },
+    plan: { cells: source.plan.cells, render },
+  };
 }
 
 /** 小節の終わりまで伸びる音か */
@@ -257,8 +289,6 @@ export function useSession(): Session {
   const [log, setLog] = useState<BarLog[]>([]);
   /** ユーザーが直近1小節に叩いた回数 */
   const [tapCount, setTapCount] = useState(0);
-  /** 締切を過ぎて、次のコードが確定しているか */
-  const [locked, setLocked] = useState(false);
 
   // 再生ループから最新の設定を読むためのref
   const settingsRef = useRef(settings);
@@ -302,6 +332,7 @@ export function useSession(): Session {
       // 出し直しのときは、新しい分が届くまで用意済みのソロを残しておく（間に合わなければそれを使う）
       if (!keepPrepared) {
         engine.prepared = new Map();
+        engine.preparedAny = null;
       }
       setReadyMs(null);
       const { bpm, strategy, voice, energy: dial } = settingsRef.current;
@@ -325,6 +356,7 @@ export function useSession(): Session {
         .then((response) => {
           if (engineRef.current !== engine || engine.requestToken !== token) return;
           engine.prepared = new Map(Object.entries(response.results));
+        engine.preparedAny = Object.values(response.results).find((bar) => bar !== null) ?? null;
           setReadyMs(performance.now() - requestedAt);
           setClientName(response.client);
           setError(null);
@@ -352,25 +384,26 @@ export function useSession(): Session {
         current = START_CHORD;
         how = "start";
         engine.history.push(current);
-      } else if (engine.switchedEarly) {
-        // 前の小節の途中で、ユーザーが弾いたコードへ先に切り替えてある。そのコードを続ける
+      } else if (engine.pendingSwitch !== null && engine.pendingSwitch !== engine.history.at(-1)) {
+        // 前の小節の最後の拍で弾かれたコード。この小節の頭から切り替える
+        current = engine.pendingSwitch;
+        how = "chosen";
+        engine.history.push(current);
+      } else if (engine.heldOver) {
+        // 前の小節でユーザーがコードを弾いた。自動では進まず、そのコードを続ける
         current = engine.history.at(-1)!;
         how = "chosen";
       } else {
-        // 次のコードは、前の小節の締切（4拍目の頭）で確定している。
-        // 確定していなければ（テンポを変えた直後など）、ここで決める
-        const options = nextChordCandidates(engine.history);
-        const picked = options.find((candidate) => candidate.chord === engine.selected)?.chord;
-        const decided = engine.locked ?? { chord: picked ?? options[0]!.chord, byUser: picked !== undefined };
-        current = decided.chord;
-        how = decided.byUser ? "chosen" : "auto";
+        // 何も弾かれなかったので、既定の候補へ自動で進む
+        current = nextChordCandidates(engine.history)[0]!.chord;
+        how = "auto";
         engine.history.push(current);
       }
-      const solo = engine.prepared.get(current) ?? null;
+      // 用意していないコードへ進んだときは、同じフレーズをそのコードの上に乗せ直す
+      const solo = engine.prepared.get(current) ?? transplant(engine.preparedAny, current, engine.held ? engine.heldPitch : null);
       engine.selected = null;
-      engine.locked = null;
       engine.pendingSwitch = null;
-      engine.switchedEarly = false;
+      engine.heldOver = false;
       const next = nextChordCandidates(engine.history);
 
       const beat = tone.Time("4n").toSeconds();
@@ -461,7 +494,6 @@ export function useSession(): Session {
         setChord(current);
         setCandidates(next);
         setSelected(engine.selected);
-        setLocked(engine.locked !== null);
         setLog((entries) =>
           [
             {
@@ -492,7 +524,7 @@ export function useSession(): Session {
     (engine: Engine, plan: BarPlan, target: string, time: number) => {
       plan.chord = target;
       engine.history.push(target);
-      engine.switchedEarly = true;
+      const next = nextChordCandidates(engine.history);
       plan.band = accompaniment(target, { bar: plan.bar, energy: plan.energy, deferLastBass: true }, replay(plan.seeds));
       if (plan.solo?.plan) {
         const beat = engine.tone.Time("4n").toSeconds();
@@ -507,28 +539,28 @@ export function useSession(): Session {
       engine.tone.getDraw().schedule(() => {
         if (engineRef.current !== engine) return;
         setChord(target);
+        // 弾いたコードから進める先を、すぐ鍵盤に出す。続けて何度でも弾ける
+        setCandidates(next);
+        setSelected(target);
         emit({ kind: "bar", bar: plan.bar, chord: target });
       }, time);
     },
     [emit],
   );
 
+  /** 次の小節の頭で鳴っているはずのコード。ユーザーがこの小節で弾いていればそのまま、弾いていなければ既定の候補 */
+  const upcomingChord = (engine: Engine, plan: BarPlan): string =>
+    engine.heldOver ? plan.chord : nextChordCandidates(engine.history)[0]!.chord;
+
   /**
-   * コード選択の締切（4拍目の頭）。次のコードを確定し、最後の1拍をそのコードへ向かわせる。
-   * ユーザーがこの小節でコードを弾いていればそのコードへ、弾いていなければ既定の候補へ進む。
+   * 4拍目の頭で、最後の1拍を次の小節のコードへ向かわせる。
+   * この後の1拍のあいだにユーザーが別のコードを弾くこともあるが、そのときは向かった先とずれる。許容する
    */
-  const settleNextChord = useCallback((engine: Engine, plan: BarPlan) => {
-    if (engine.locked === null) {
-      const options = nextChordCandidates(engine.history);
-      engine.locked = { chord: options[0]!.chord, byUser: false };
-      // ここから先は選び直せない。鍵盤をすぐに押せなくする
-      setSelected(null);
-      setLocked(true);
-    }
+  const aimLastBeat = useCallback((engine: Engine, plan: BarPlan) => {
     // 小節の終わりまで伸びる最後の音は、次のコードに合う音へ寄せる
     const last = plan.notes.at(-1);
     if (last && !last.tie && last.startBeats >= DEADLINE_BEATS && reachesBarEnd(last)) {
-      plan.notes = [...plan.notes.slice(0, -1), { ...last, pitch: aimPitch(last.pitch, plan.chord, engine.locked.chord) }];
+      plan.notes = [...plan.notes.slice(0, -1), { ...last, pitch: aimPitch(last.pitch, plan.chord, upcomingChord(engine, plan)) }];
     }
   }, []);
 
@@ -559,8 +591,8 @@ export function useSession(): Session {
         }
       }
       // ベースの4拍目は、次のコードのルートへ半音で寄る。静かなときは2分音符で弾いていて4拍目が無い
-      if (beatIndex === DEADLINE_BEATS && plan.energy !== 1 && engine.locked) {
-        engine.bass.triggerAttackRelease(midi(bassApproach(plan.chord, engine.locked.chord)), beat * 0.9, time, 0.7);
+      if (beatIndex === DEADLINE_BEATS && plan.energy !== 1) {
+        engine.bass.triggerAttackRelease(midi(bassApproach(plan.chord, upcomingChord(engine, plan))), beat * 0.9, time, 0.7);
       }
       draw.schedule(() => emit({ kind: "beat", beat: beatIndex }), time);
 
@@ -602,18 +634,18 @@ export function useSession(): Session {
       }
       const plan = engine.now;
       if (!plan) return;
-      // ユーザーがコードを弾いていたら、この拍から切り替える
+      // ユーザーがコードを弾いていたら、この拍から切り替える（小節の頭のぶんは startBar が処理した）
       const target = engine.pendingSwitch;
       engine.pendingSwitch = null;
       if (beatIndex > 0 && target !== null && target !== plan.chord) {
         switchChord(engine, plan, target, time);
       }
       if (beatIndex === DEADLINE_BEATS) {
-        settleNextChord(engine, plan);
+        aimLastBeat(engine, plan);
       }
       scheduleBeat(engine, plan, beatIndex, time);
     },
-    [scheduleBeat, settleNextChord, startBar, switchChord],
+    [aimLastBeat, scheduleBeat, startBar, switchChord],
   );
 
   const stop = useCallback(() => {
@@ -644,7 +676,6 @@ export function useSession(): Session {
     setSelected(null);
     setReadyMs(null);
     setTapCount(0);
-    setLocked(false);
   }, []);
 
   const start = useCallback(async () => {
@@ -689,11 +720,13 @@ export function useSession(): Session {
         requestToken: 0,
         held: null,
         heldPitch: SOLO_START_PITCH,
-        locked: null,
+        heldOver: false,
+        heldNotes: new Map(),
+        repreparedBar: 0,
+        preparedAny: null,
         now: null,
         beatCount: 0,
         pendingSwitch: null,
-        switchedEarly: false,
         pressed: null,
         previous: { pitch: SOLO_START_PITCH, memo: {} },
         taps: [],
@@ -758,18 +791,13 @@ export function useSession(): Session {
       if (!engine || !plan) return;
       const { tone } = engine;
 
-      // まだ次のコードが決まっていなければ、弾いたコードに決める。バンドは次の拍から付いてくる
-      const playable = engine.locked === null && nextChordCandidates(engine.history).some((option) => option.chord === candidate);
-      if (playable) {
-        engine.locked = { chord: candidate, byUser: true };
-        engine.selected = candidate;
-        engine.pendingSwitch = candidate;
-        setSelected(candidate);
-        setLocked(true);
-      } else if (candidate !== plan.chord && candidate !== engine.locked?.chord) {
-        // 決まった後に別のコードを弾いても、何も起きない
-        return;
-      }
+      // いまのコードから進める先だけを弾ける。進行として成り立たせるための柵
+      if (!nextChordCandidates(engine.history).some((option) => option.chord === candidate)) return;
+      // バンドは次の拍から付いてくる。この小節で弾いたので、次の小節の頭では自動で進まない
+      engine.pendingSwitch = candidate;
+      engine.heldOver = true;
+      engine.selected = candidate;
+      setSelected(candidate);
 
       // 押した瞬間に、自分の手でコードを鳴らす。離すまで鳴り続ける
       releaseChord();
@@ -812,25 +840,29 @@ export function useSession(): Session {
     recordTap(engine);
   }, [emit, recordTap]);
 
-  const playTone = useCallback(
-    (index: number) => {
+  const noteOn = useCallback(
+    (pitchClass: number) => {
       const engine = engineRef.current;
-      const current = engine?.history.at(-1);
-      if (!engine || current === undefined) return;
-      const note = chordTones(current)[index];
-      if (note === undefined) return;
+      if (!engine || !engine.now || engine.heldNotes.has(pitchClass)) return;
       const { tone } = engine;
-      emit({ kind: "jam", pitches: [JAM_TONE_BASE + pitchClassOf(note)] });
-      engine.jam.triggerAttackRelease(
-        tone.Frequency(JAM_TONE_BASE + pitchClassOf(note), "midi").toFrequency(),
-        0.6,
-        tone.immediate(),
-        0.95,
-      );
+      const pitch = JAM_TONE_BASE + pitchClass;
+      const frequency = tone.Frequency(pitch, "midi").toFrequency();
+      // 押した音をそのまま鳴らす。コードに合わない音でも、寄せたり黙らせたりしない
+      engine.jam.triggerAttack(frequency, tone.immediate(), 0.95);
+      engine.heldNotes.set(pitchClass, frequency);
+      emit({ kind: "jam", pitches: [pitch] });
       recordTap(engine);
     },
     [emit, recordTap],
   );
+
+  const noteOff = useCallback((pitchClass: number) => {
+    const engine = engineRef.current;
+    const frequency = engine?.heldNotes.get(pitchClass);
+    if (!engine || frequency === undefined) return;
+    engine.jam.triggerRelease(frequency, engine.tone.immediate());
+    engine.heldNotes.delete(pitchClass);
+  }, []);
 
   const updateSettings = useCallback((patch: Partial<SessionSettings>) => {
     setSettings((current) => ({ ...current, ...patch }));
@@ -848,15 +880,17 @@ export function useSession(): Session {
   const live = liveEnergy(settings.energy, tapCount);
   const touch = touchOf(tapCount);
 
-  // 盛り上がりが変わったら（つまみを動かした、または叩き方が変わった）、次の小節のソロを作り直す。
-  // 効くのを1小節早めるため
+  // 盛り上がりの段階が変わったら（つまみを動かした、または叩いて段階が上がった）、次の小節のソロを作り直す。
+  // 効くのを1小節早めるため。作り直しはJevを呼ぶので、1小節に1回までにする。
+  // 以前は叩き方が変わるたびに作り直していて、鍵盤を弾くだけで依頼が倍に増えていた
   useEffect(() => {
     const engine = engineRef.current;
-    if (engine?.lastRequest && engine.bar > 0) {
+    if (engine?.lastRequest && engine.bar > 0 && engine.repreparedBar !== engine.bar) {
+      engine.repreparedBar = engine.bar;
       const { chords, previousPitch, memo, sustained, retargetable } = engine.lastRequest;
       void prepare(engine, chords, previousPitch, memo, { sustained, retargetable }, true);
     }
-  }, [live, touch, prepare]);
+  }, [live, prepare]);
 
   // 画面を離れるときに音を止める
   useEffect(() => stop, [stop]);
@@ -872,7 +906,6 @@ export function useSession(): Session {
       candidates,
       nextChord: selected ?? candidates[0]?.chord ?? null,
       chosenByUser: selected !== null,
-      locked,
       choose,
       releaseChord,
       readyMs,
@@ -881,8 +914,8 @@ export function useSession(): Session {
       log,
       subscribe,
       tap,
-      playTone,
-      tones: chord === null ? [] : chordTones(chord).slice(0, JAM_TONE_COUNT),
+      noteOn,
+      noteOff,
       liveEnergy: live,
       touch,
     }),
@@ -895,7 +928,6 @@ export function useSession(): Session {
       chord,
       candidates,
       selected,
-      locked,
       choose,
       releaseChord,
       readyMs,
@@ -904,7 +936,8 @@ export function useSession(): Session {
       log,
       subscribe,
       tap,
-      playTone,
+      noteOn,
+      noteOff,
       live,
       touch,
     ],

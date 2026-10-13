@@ -738,6 +738,24 @@ input {
   color: var(--ink-soft);
 }
 
+/* 鍵に書いたキーの印の、凡例 */
+.legend-fit {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+}
+
+.legend-fit[data-fit="chord"] {
+  background: var(--ink);
+}
+
+.legend-fit[data-fit="outside"] {
+  border-style: dashed;
+  border-color: var(--ink-soft);
+}
+
 /* ---- 演奏の流れ（ピアノロール） ---- */
 
 .roll {
@@ -800,7 +818,7 @@ input {
 
 /* ---- 自分で鳴らせる音の印 ---- */
 
-/* いまのコードの構成音の鍵に、対応するパソコンのキーを出す */
+/* 鍵ごとに、その音を弾くパソコンのキーを出す。いまのコードとの関係を、塗り・枠・破線で示す */
 .piano-jam {
   display: grid;
   place-items: center;
@@ -825,6 +843,41 @@ input {
   border-color: var(--paper);
 }
 
+/* コードの音: 塗りつぶし / 合う音: 実線の枠 / コードの外の音: 破線の枠で薄く。押せばどれも、そのままの音で鳴る */
+.piano-jam[data-fit="chord"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.is-black .piano-jam[data-fit="chord"] {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.piano-jam[data-fit="scale"] {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.piano-jam[data-fit="outside"] {
+  background: transparent;
+  border-style: dashed;
+  color: var(--ink-soft);
+}
+
+.is-black .piano-jam[data-fit="outside"] {
+  color: #c9c6dc;
+}
+
+.piano-jam:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.piano-note {
+  cursor: pointer;
+}
+
 /* 鳴らした瞬間、その鍵と印を光らせる */
 .piano-note[data-hit="true"] .piano-jam {
   background: var(--blue);
@@ -839,41 +892,6 @@ input {
 
 .piano-note.is-black[data-hit="true"] {
   background: linear-gradient(to bottom, #2a2550 30%, #3b57c9);
-}
-
-/* ---- 次のコードが確定した後の鍵盤 ---- */
-
-/* 4拍目に入ると選び直せない。選ばれなかった候補と鍵を沈め、進む先だけを浮かび上がらせる */
-.piano-note,
-.chip {
-  transition:
-    opacity 140ms ease-out,
-    filter 140ms ease-out,
-    box-shadow 140ms ease-out;
-}
-
-.piano[data-locked="true"] .piano-note:not([data-next]) {
-  filter: grayscale(1) brightness(0.86);
-}
-
-.piano[data-locked="true"] .chip:not([aria-pressed="true"]) {
-  opacity: 0.22;
-  filter: grayscale(1);
-  cursor: default;
-}
-
-.piano[data-locked="true"] .chip[aria-pressed="true"] {
-  box-shadow:
-    0 0 0 3px var(--paper),
-    0 0 0 6px var(--ink);
-  cursor: default;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .piano-note,
-  .chip {
-    transition: none;
-  }
 }
 
 /* ---- 自分でも弾く ---- */

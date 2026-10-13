@@ -5,8 +5,9 @@ import { BarLogPanel } from "./components/bar-log.tsx";
 import { isEnergy } from "../lib/solo/energy.ts";
 import { ControlDock } from "./components/control-dock.tsx";
 import { EnergyDial } from "./components/energy-dial.tsx";
-import { JAM_KEYS, JamPad } from "./components/jam-pad.tsx";
+import { JamPad } from "./components/jam-pad.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
+import { NOTE_KEY_CODES } from "./components/piano.tsx";
 import { PianoRoll } from "./components/piano-roll.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { useSession } from "./session/use-session.ts";
@@ -17,7 +18,7 @@ export default function Page() {
   const playing = status === "playing";
 
   const { energy } = session.settings;
-  const { updateSettings, tap, playTone, releaseChord } = session;
+  const { updateSettings, tap, noteOn, noteOff, releaseChord } = session;
 
   // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
   useEffect(() => {
@@ -35,9 +36,10 @@ export default function Page() {
           event.preventDefault();
           return;
         }
-        const tone = JAM_KEYS.findIndex((key) => code === `Key${key.toUpperCase()}`);
-        if (tone >= 0) {
-          playTone(tone);
+        // 鍵盤の音。押している間だけ鳴る
+        const pitchClass = NOTE_KEY_CODES.indexOf(code as (typeof NOTE_KEY_CODES)[number]);
+        if (pitchClass >= 0) {
+          noteOn(pitchClass);
           event.preventDefault();
           return;
         }
@@ -57,9 +59,11 @@ export default function Page() {
         choose(candidate.chord);
       }
     };
-    // 数字キーを離したら、押さえていたコードの音を止める
+    // キーを離したら、押さえていたコードや音を止める
     const onKeyUp = (event: KeyboardEvent) => {
       if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) releaseChord();
+      const pitchClass = NOTE_KEY_CODES.indexOf(event.code as (typeof NOTE_KEY_CODES)[number]);
+      if (pitchClass >= 0) noteOff(pitchClass);
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -67,7 +71,7 @@ export default function Page() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [candidates, choose, energy, playing, playTone, releaseChord, tap, updateSettings]);
+  }, [candidates, choose, energy, noteOff, noteOn, playing, releaseChord, tap, updateSettings]);
 
   const preparing = playing && session.readyMs === null;
 
@@ -148,11 +152,10 @@ export default function Page() {
             candidates={candidates}
             nextChord={nextChord}
             chosenByUser={session.chosenByUser}
-            locked={session.locked}
             choose={choose}
             releaseChord={releaseChord}
-            tones={session.tones}
-            playTone={playTone}
+            noteOn={noteOn}
+            noteOff={noteOff}
             subscribe={session.subscribe}
             currentChord={session.chord}
             bpm={session.settings.bpm}
@@ -172,10 +175,22 @@ export default function Page() {
                 </span>
                 いまのルート
               </li>
+              <li>
+                <span className="legend-fit" data-fit="chord" aria-hidden="true" />
+                コードの音
+              </li>
+              <li>
+                <span className="legend-fit" data-fit="scale" aria-hidden="true" />
+                合う音
+              </li>
+              <li>
+                <span className="legend-fit" data-fit="outside" aria-hidden="true" />
+                外の音
+              </li>
             </ul>
             <p className="hint">
               {playing
-                ? "鍵の上のコードを押すと、その場で鳴って、バンドが次の拍から付いてきます（数字キーでも弾けます）。弾かなければ「自動」の印のコードへ進みます。"
+                ? "コードの札を押すと、その場で鳴って、バンドが次の拍から付いてきます（数字キーでも弾けます）。何度でも弾けます。弾かなければ「自動」の印のコードへ進みます。鍵そのものや、鍵に書いてあるキーを押すと、その音が鳴ります。"
                 : "開始すると、次に進めるコードが鍵の上に出ます。"}
             </p>
           </div>
