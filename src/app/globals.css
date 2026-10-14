@@ -1437,34 +1437,6 @@ th {
   margin: 10px 4px 0;
 }
 
-/* 表示のお試しの切り替え。決まったら消す */
-.style-trial {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 18px;
-  margin: 12px 0 0;
-  padding: 8px 14px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 12px;
-  font-size: 0.875rem;
-}
-
-.style-trial legend {
-  padding: 0 6px;
-  color: var(--ink-soft);
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.style-trial-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  cursor: pointer;
-}
-
 .score-status {
   margin: 0;
   color: var(--ink-soft);

@@ -2,11 +2,10 @@
 
 // 演奏する面。このアプリの演奏はすべてここで行う。
 // 押した位置の高さで和音が鳴り、離すまで伸びる。その様子とJevのソロが、右から左へ流れていく。
-// 描き方は score-styles.ts の3種類から選べる（見比べて決めるため）。
 import { useEffect, useRef } from "react";
 import { ENERGY, type Energy } from "../../lib/solo/energy.ts";
 import type { Session, SessionEvent, SessionStatus } from "../session/use-session.ts";
-import { type Frame, type Mark, SCORE_STYLES, type ScoreStyleId, type YouMark } from "./score-styles.ts";
+import { type Frame, type Mark, type YouMark, drawScore } from "./score-draw.ts";
 
 /** 押して弾ける位置の範囲（真ん中のドを0とした段）。ド（C4）から2オクターブ上のド（C6）まで */
 export const TAP_STEP_LOW = 0;
@@ -38,8 +37,6 @@ function geometry(width: number, height: number) {
 type Props = Pick<Session, "subscribe"> & {
   status: SessionStatus;
   energy: Energy;
-  /** 描き方 */
-  styleId: ScoreStyleId;
   /** キーボード（スペース）で押すときの位置。上下キーで動かす */
   keyboardStep: number;
   onStart: () => void;
@@ -47,12 +44,10 @@ type Props = Pick<Session, "subscribe"> & {
   onRelease: () => void;
 };
 
-export function Score({ subscribe, status, energy, styleId, keyboardStep, onStart, onPress, onRelease }: Props) {
+export function Score({ subscribe, status, energy, keyboardStep, onStart, onPress, onRelease }: Props) {
   const playing = status === "playing";
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 描画のループから最新の値を読むための ref
-  const styleRef = useRef(styleId);
-  styleRef.current = styleId;
   const cursorRef = useRef<number | null>(null);
   cursorRef.current = playing ? keyboardStep : null;
   const redrawRef = useRef<() => void>(() => {});
@@ -101,7 +96,7 @@ export function Score({ subscribe, status, energy, styleId, keyboardStep, onStar
         reducedMotion: motionQuery.matches,
       };
       context.clearRect(0, 0, width, height);
-      SCORE_STYLES[styleRef.current].draw(view, marks);
+      drawScore(view, marks);
 
       // スペースキーで押す位置の印
       const cursor = cursorRef.current;
@@ -168,17 +163,16 @@ export function Score({ subscribe, status, energy, styleId, keyboardStep, onStar
     };
   }, [subscribe]);
 
-  // キーボードの位置や描き方を変えたら、描き直す
+  // キーボードの位置を変えたら、描き直す
   useEffect(() => {
     redrawRef.current();
-  }, [keyboardStep, playing, styleId]);
+  }, [keyboardStep, playing]);
 
   return (
     <section className="score" aria-label="演奏する面。押して和音を鳴らす">
       <button
         type="button"
         className="score-surface"
-        data-style={styleId}
         aria-label={
           playing
             ? "押して和音を鳴らす。押している間は伸び、上の方ほど高い音になります（スペースキーで押し、上下キーで高さを変えられます）"

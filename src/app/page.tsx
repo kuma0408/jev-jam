@@ -6,7 +6,6 @@ import { ControlDock } from "./components/control-dock.tsx";
 import { MelodyPads, PAD_KEY_CODES } from "./components/melody-pads.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
 import { Score, TAP_STEP_HIGH, TAP_STEP_LOW } from "./components/score.tsx";
-import { SCORE_STYLES, SCORE_STYLE_IDS, type ScoreStyleId } from "./components/score-styles.ts";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { TurnBanner } from "./components/turn-banner.tsx";
@@ -22,8 +21,6 @@ export default function Page() {
   const [keyboard, setKeyboard] = useState<"easy" | "piano">("easy");
   // キーボードで叩くときの五線の位置（上下キーで動かす）。最初は五線の真ん中のシ
   const [keyboardStep, setKeyboardStep] = useState(6);
-  // 演奏の流れの描き方。見比べて決めるためのお試し（決まったら選ばれたもの以外は消す）
-  const [scoreStyle, setScoreStyle] = useState<ScoreStyleId>("ribbon");
   // 旋律の鍵盤は、掛け合いをするときだけキーで弾ける（普段はキーを叩いても何も起きない）
   const trading = session.settings.trade;
 
@@ -130,27 +127,11 @@ export default function Page() {
           subscribe={session.subscribe}
           status={status}
           energy={session.liveEnergy}
-          styleId={scoreStyle}
           keyboardStep={keyboardStep}
           onStart={session.start}
           onPress={strike}
           onRelease={lift}
         />
-        <fieldset className="style-trial">
-          <legend>表示（お試し）</legend>
-          {SCORE_STYLE_IDS.map((id) => (
-            <label key={id} className="style-trial-option">
-              <input
-                type="radio"
-                name="score-style"
-                value={id}
-                checked={scoreStyle === id}
-                onChange={() => setScoreStyle(id)}
-              />
-              {SCORE_STYLES[id].label}
-            </label>
-          ))}
-        </fieldset>
 
         {/* 遊ぶのに要らないものは、ここにしまっておく。勉強会では開いて、Jevが何を選んだかを見せる */}
         <details className="backstage">
