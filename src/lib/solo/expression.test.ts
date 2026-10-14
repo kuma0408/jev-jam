@@ -236,8 +236,9 @@ describe("planExpression（伴奏がしっとりしているとき）", () => {
   });
 
   it("ビブラートを深くする", () => {
-    const [usual] = planExpression([{ ...notes[0]!, durationBeats: 2 }], { secondsPerBeat: 0.75 }, () => 0.5);
-    const [sustained] = planExpression([{ ...notes[0]!, durationBeats: 2 }], { secondsPerBeat: 0.75, mood: "sustained" }, () => 0.5);
+    // 乱数を大きくして、しゃくりとフォールを付けない（音程の揺れをビブラートだけにする）
+    const [usual] = planExpression([{ ...notes[0]!, durationBeats: 2 }], { secondsPerBeat: 0.75 }, () => 0.99);
+    const [sustained] = planExpression([{ ...notes[0]!, durationBeats: 2 }], { secondsPerBeat: 0.75, mood: "sustained" }, () => 0.99);
     const depth = (expression: NoteExpression) => Math.max(...renderExpression(expression, 1.5).pitch.map(Math.abs));
     expect(depth(sustained!)).toBeGreaterThan(depth(usual!) * 1.2);
   });
