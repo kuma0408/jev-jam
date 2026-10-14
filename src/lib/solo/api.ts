@@ -20,7 +20,7 @@ export type SoloNote = {
   /** 小節の頭からの拍数 */
   startBeats: number;
   durationBeats: number;
-  /** 強さ（0〜1） */
+  /** 強さ（ふだんは0〜1。伴奏が激しいときは、1を超えて大きくすることがある） */
   velocity: number;
   /** スウィングをかけるか。3連符のように位置が決まっている音は false */
   swing: boolean;

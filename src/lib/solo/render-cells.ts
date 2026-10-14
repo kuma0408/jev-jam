@@ -114,7 +114,9 @@ function velocityOf(note: CellNote, startBeats: number, options: RenderOptions):
   const metric = fraction === 0 ? ONBEAT_FACTOR : fraction === 0.5 ? OFFBEAT_FACTOR : 1;
   const accent = note.accent === "ghost" ? GHOST_FACTOR : note.accent === "accent" ? ACCENT_FACTOR : 1;
   const scale = options.velocityScale ?? 1;
-  return Math.min(1, Math.max(MIN_VELOCITY, BASE_VELOCITY[options.dynamics] * shape * metric * accent * scale));
+  // 大きくする倍率のときは、ふだんの上限（1）を超えてよい。上限で頭打ちになると、激しくしても大きく聞こえない
+  const ceiling = Math.max(1, scale);
+  return Math.min(ceiling, Math.max(MIN_VELOCITY, BASE_VELOCITY[options.dynamics] * shape * metric * accent * scale));
 }
 
 /**
