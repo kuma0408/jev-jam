@@ -41,3 +41,4 @@
 | [0035](0035-solo-follows-comping-touch.md) | ソロは伴奏の質感（押した回数と伸ばした長さ）に合わせて、しっとりにも激しくもなる | 設計判断 | Accepted | 2026-10-14 |
 | [0036](0036-breath-noise-and-brass-samples.md) | 管楽器に息の音を重ねる。トランペットとトロンボーンの録音を足す | 工夫 | Accepted | 2026-10-14 |
 | [0037](0037-revoice-held-chord-and-louder-brass.md) | 押さえたままの和音は、コードが変わったら押さえ直す。トロンボーンと息の音を大きくする | 苦労と解決 | Accepted | 2026-10-14 |
+| [0038](0038-two-chords-in-one-bar.md) | 1小節に2つのコードを置けるようにする（Just the Two of Us進行を4小節で回す） | 苦労と解決 | Accepted | 2026-10-14 |

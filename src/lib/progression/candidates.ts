@@ -6,6 +6,8 @@ export type ChordCandidate = {
   adventure: 1 | 2 | 3;
   /** なぜこの進行が成り立つかの短い説明 */
   reason: string;
+  /** この小節の後半（3拍目から）に置くコード。1小節に2つのコードを半分ずつ置く進行の続きのときだけある */
+  then?: string;
 };
 
 export const MAX_CANDIDATES = 6;
@@ -45,6 +47,13 @@ function chordAt(progression: Progression, index: number): string | undefined {
   return chords[index];
 }
 
+/** 進行の index 番目のコードが、1小節に2つ置く小節の前半か。そうなら後半のコードを返す */
+function secondHalfAfter(progression: Progression, index: number): string | undefined {
+  const { chords, loop, split } = progression;
+  const normalized = loop ? ((index % chords.length) + chords.length) % chords.length : index;
+  return split?.includes(normalized) ? chordAt(progression, index + 1) : undefined;
+}
+
 /** 進行の position 番目が履歴の最後だとして、履歴の末尾と何コードぶん一致するかを数える */
 function matchLength(progression: Progression, position: number, history: readonly string[]): number {
   const limit = Math.min(history.length, progression.chords.length, MAX_MATCH_LENGTH);
@@ -55,8 +64,11 @@ function matchLength(progression: Progression, position: number, history: readon
   return length;
 }
 
-/** length: 最も長い一致 / weight: 支持する進行の重みの合計 / name: 最も長く一致した進行の名前 */
-type Support = { length: number; weight: number; name: string };
+/**
+ * length: 最も長い一致 / weight: 支持する進行の重みの合計 / name: 最も長く一致した進行の名前 /
+ * then: 最も長く一致した進行で、この小節の後半に置くコード
+ */
+type Support = { length: number; weight: number; name: string; then?: string };
 
 /**
  * これまでの進行から、次に進めるコードの候補を返す。
@@ -84,14 +96,17 @@ export function nextChordCandidates(history: readonly string[]): ChordCandidate[
 
       const length = matchLength(progression, position, flow);
       const weight = progression.pop ? POP_WEIGHT : JAZZ_WEIGHT;
+      const then = secondHalfAfter(progression, position + 1);
       const support = supports.get(next);
       if (!support) {
-        supports.set(next, { length, weight, name: progression.name });
+        supports.set(next, { length, weight, name: progression.name, ...(then ? { then } : {}) });
       } else {
         support.weight += weight;
         if (length > support.length) {
           support.length = length;
           support.name = progression.name;
+          if (then) support.then = then;
+          else delete support.then;
         }
       }
     });
@@ -105,7 +120,12 @@ export function nextChordCandidates(history: readonly string[]): ChordCandidate[
     )
     // 最後の1枠は「とどまる」のために空けておく
     .slice(0, MAX_CANDIDATES - 1)
-    .map(({ chord, support, adventure }) => ({ chord, adventure, reason: `「${support.name}」の続き` }));
+    .map(({ chord, support, adventure }) => ({
+      chord,
+      adventure,
+      reason: support.then ? `「${support.name}」の続き（後半は ${support.then}）` : `「${support.name}」の続き`,
+      ...(support.then ? { then: support.then } : {}),
+    }));
 
   candidates.push({ chord: current, adventure: 1, reason: "同じコードにもう1小節とどまる" });
 

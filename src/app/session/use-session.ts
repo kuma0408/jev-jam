@@ -27,6 +27,8 @@ import { type ExpressiveVoice, type HeldNote, createExpressiveVoice } from "./ex
 
 const START_CHORD = "Cmaj7";
 const BEATS_PER_BAR = 4;
+/** 1小節に2つのコードを置くとき、後半のコードに切り替える拍（0始まり。3拍目） */
+const SPLIT_BEAT = 2;
 /**
  * コード選択の締切（小節の頭からの拍数）。4拍目の頭。
  * ここで次のコードを確定し、最後の1拍のソロとベースを次のコードへ向かわせる
@@ -248,6 +250,11 @@ type Engine = {
   beatCount: number;
   /** ユーザーが弾いたコード。次の拍でバンドがこのコードへ切り替わる */
   pendingSwitch: string | null;
+  /**
+   * 自動で進んだ小節の後半（3拍目から）に置くコード。1小節に2つのコードを半分ずつ置く進行（Just the Two of Us など）で使う。
+   * ユーザーがコードを弾いたら取りやめる
+   */
+  autoSplit: string | null;
   /** ユーザーが押さえているコードの音（周波数）。離したときに止める */
   pressed: number[] | null;
   /** 五線を押さえて鳴らしている和音（周波数）。離したときに止める */
@@ -499,11 +506,14 @@ export function useSession(): Session {
         current = engine.history.at(-1)!;
         how = "chosen";
       } else {
-        // 何も弾かれなかったので、既定の候補へ自動で進む
-        current = nextChordCandidates(engine.history)[0]!.chord;
+        // 何も弾かれなかったので、既定の候補へ自動で進む。後半に置くコードがあれば、3拍目で切り替える
+        const [first] = nextChordCandidates(engine.history);
+        current = first!.chord;
         how = "auto";
         engine.history.push(current);
+        engine.autoSplit = first!.then ?? null;
       }
+      if (how !== "auto") engine.autoSplit = null;
       const trading = settingsRef.current.trade;
       const who: Turn = trading ? turnOf(bar) : "jev";
       if (trading && who === "you" && turnOf(bar - 1) === "jev") {
@@ -521,7 +531,8 @@ export function useSession(): Session {
       engine.pendingSwitch = null;
       engine.heldOver = false;
       revoiceHeld(engine, current, time);
-      const next = nextChordCandidates(engine.history);
+      // 次の小節の候補。後半のコードへ切り替える予定なら、切り替えた後の流れから求める
+      const next = nextChordCandidates(engine.autoSplit ? [...engine.history, engine.autoSplit] : engine.history);
 
       const beat = tone.Time("4n").toSeconds();
       const ratio = swingRatioFor(settingsRef.current.bpm);
@@ -771,6 +782,12 @@ export function useSession(): Session {
       if (beatIndex > 0 && target !== null && target !== plan.chord) {
         switchChord(engine, plan, target, time);
       }
+      // 1小節に2つのコードを置く小節では、3拍目で後半のコードへ切り替える
+      if (beatIndex === SPLIT_BEAT && engine.autoSplit !== null) {
+        const second = engine.autoSplit;
+        engine.autoSplit = null;
+        if (second !== plan.chord) switchChord(engine, plan, second, time);
+      }
       if (beatIndex === DEADLINE_BEATS) {
         aimLastBeat(engine, plan);
       }
@@ -884,6 +901,7 @@ export function useSession(): Session {
         now: null,
         beatCount: 0,
         pendingSwitch: null,
+        autoSplit: null,
         pressed: null,
         struck: null,
         struckAt: null,
@@ -986,6 +1004,8 @@ export function useSession(): Session {
       engine.pendingSwitch = candidate;
       engine.heldOver = true;
       engine.selected = candidate;
+      // ユーザーが弾いたので、自動の後半のコードへの切り替えは取りやめる
+      engine.autoSplit = null;
       setSelected(candidate);
 
       // 押した瞬間に、自分の手でコードを鳴らす。離すまで鳴り続ける

@@ -6,6 +6,11 @@ export type Progression = {
   loop?: boolean;
   /** ポップス寄りの進行。ジャズ/ネオソウルのセッションでは優先度を下げる */
   pop?: boolean;
+  /**
+   * 1小節に2つのコードを半分ずつ置く場所。i を入れると、chords[i] を小節の前半、chords[i + 1] を後半に置く。
+   * 省けば、どのコードも1小節ずつ
+   */
+  split?: readonly number[];
 };
 
 // よく使われるコード進行の一覧。すべてCメジャーで書く。
@@ -16,7 +21,8 @@ export const PROGRESSIONS: readonly Progression[] = [
   { name: "循環（I-VI7-II-V）", chords: ["Cmaj7", "A7", "Dm7", "G7"], loop: true },
   { name: "3-6-2-5", chords: ["Em7", "A7", "Dm7", "G7", "Cmaj7"] },
   { name: "王道進行", chords: ["Fmaj7", "G7", "Em7", "Am7"], loop: true, pop: true },
-  { name: "Just the Two of Us進行", chords: ["Fmaj7", "E7", "Am7", "Gm7", "C7"], loop: true },
+  // | Fmaj7 | E7 | Am7 | Gm7 C7 | の4小節で1周する。1小節に1つずつ置くと5小節で1周し、4小節のまとまりとずれていく
+  { name: "Just the Two of Us進行", chords: ["Fmaj7", "E7", "Am7", "Gm7", "C7"], loop: true, split: [3] },
   { name: "丸サ進行", chords: ["Fmaj7", "E7", "Am7", "C7"], loop: true },
   { name: "カノン進行", chords: ["Cmaj7", "G7", "Am7", "Em7", "Fmaj7", "Cmaj7", "Fmaj7", "G7"], loop: true, pop: true },
   { name: "小室進行", chords: ["Am7", "Fmaj7", "G7", "Cmaj7"], loop: true, pop: true },
