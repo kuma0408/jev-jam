@@ -110,3 +110,47 @@ describe("nextChordCandidates", () => {
     });
   });
 });
+
+describe("nextChordCandidates（1小節に2つのコードを置く）", () => {
+  /** 自動で（先頭の候補へ）進めたときの、小節ごとのコード。後半のコードがあれば「前半 後半」と書く */
+  const autoBars = (history: string[], count: number): string[] => {
+    const flow = [...history];
+    const bars: string[] = [];
+    for (let index = 0; index < count; index++) {
+      const [first] = nextChordCandidates(flow);
+      flow.push(first!.chord);
+      if (first!.then) flow.push(first!.then);
+      bars.push(first!.then ? `${first!.chord} ${first!.then}` : first!.chord);
+    }
+    return bars;
+  };
+
+  it("Just the Two of Us進行では、Am7 の次の小節に Gm7 と C7 を半分ずつ置く", () => {
+    expect(nextChordCandidates(["Fmaj7", "E7", "Am7"])[0]).toMatchObject({ chord: "Gm7", then: "C7" });
+  });
+
+  it("後半のコードの次からは、その続きを候補にする", () => {
+    expect(nextChordCandidates(["Fmaj7", "E7", "Am7", "Gm7", "C7"])[0]).toMatchObject({ chord: "Fmaj7" });
+    expect(nextChordCandidates(["Fmaj7", "E7", "Am7", "Gm7", "C7"])[0]!.then).toBeUndefined();
+  });
+
+  it("自動で進めると、Just the Two of Us進行は4小節で1周する", () => {
+    expect(autoBars(["Fmaj7", "E7", "Am7"], 8)).toEqual([
+      "Gm7 C7",
+      "Fmaj7",
+      "E7",
+      "Am7",
+      "Gm7 C7",
+      "Fmaj7",
+      "E7",
+      "Am7",
+    ]);
+  });
+
+  it("1小節に2つ置くのは、その形の進行の続きのときだけ。ほかの候補は1小節まるごと1つのコード", () => {
+    // 循環（I-VI-II-V）の途中
+    const [first] = nextChordCandidates(["Cmaj7", "Am7"]);
+    expect(first).toMatchObject({ chord: "Dm7" });
+    expect(first!.then).toBeUndefined();
+  });
+});
