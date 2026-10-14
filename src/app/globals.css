@@ -1562,4 +1562,6 @@ th {
   width: 100vw;
   height: 100vh;
   pointer-events: none;
+  /* 演奏の邪魔をしないよう、層ごと薄くする（最初は不透明にしていて「ド派手すぎる」と言われた） */
+  opacity: 0.6;
 }

@@ -26,6 +26,13 @@ export const DURATIONS: Record<EffectKind, number> = {
   sweep: 0.6,
   confetti: 1.1,
   spinner: 0.9,
+  bloom: 0.9,
+  streak: 0.45,
+  fan: 0.8,
+  petals: 0.85,
+  square: 0.9,
+  bars: 0.7,
+  orbit: 1.0,
   veil: 0.9,
   wipe: 1.0,
   spark: 0.5,
@@ -51,11 +58,11 @@ function ring({ context, theme }: Canvas, effect: Effect, t: number) {
   for (let index = 0; index < 3; index++) {
     const local = clamp01((t - index * 0.12) / 0.88);
     if (local <= 0) continue;
-    context.globalAlpha = (1 - local) * 0.9;
+    context.globalAlpha = (1 - local) * 0.7;
     context.strokeStyle = css(index === 1 ? theme.secondary : theme.primary);
-    context.lineWidth = (10 - index * 3) * effect.scale * (1 - local) + 1;
+    context.lineWidth = (5 - index * 1.5) * effect.scale * (1 - local) + 1;
     context.beginPath();
-    context.arc(effect.x, effect.y, effect.scale * (30 + 260 * easeOut(local)), 0, Math.PI * 2);
+    context.arc(effect.x, effect.y, effect.scale * (20 + 170 * easeOut(local)), 0, Math.PI * 2);
     context.stroke();
   }
 }
@@ -63,7 +70,8 @@ function ring({ context, theme }: Canvas, effect: Effect, t: number) {
 /** 大きな図形が、画面の端から押した位置を通って、反対側へ抜けていく */
 function cutIn({ context, width, height, theme }: Canvas, effect: Effect, t: number) {
   const random = seeded(effect.seed);
-  const size = Math.min(width, height) * 0.32 * effect.scale;
+  // 最初は画面の3割ほどの大きさにしたが、演奏面を覆って派手すぎたので小さくした
+  const size = Math.min(width, height) * 0.16 * effect.scale;
   const fromLeft = random() < 0.5;
   const startX = fromLeft ? -size : width + size;
   const endX = fromLeft ? width + size : -size;
@@ -75,7 +83,7 @@ function cutIn({ context, width, height, theme }: Canvas, effect: Effect, t: num
   context.save();
   context.translate(x, y);
   context.rotate(random() * Math.PI + t * 0.8);
-  context.globalAlpha = 0.85;
+  context.globalAlpha = 0.45;
   context.fillStyle = css(random() < 0.5 ? theme.primary : theme.secondary);
   context.beginPath();
   if (shape === 0) {
@@ -99,13 +107,13 @@ function cutIn({ context, width, height, theme }: Canvas, effect: Effect, t: num
 
 /** 押した高さで、平行線が画面を横切る */
 function sweep({ context, width, theme }: Canvas, effect: Effect, t: number) {
-  const gap = 14 * effect.scale;
+  const gap = 10 * effect.scale;
   const head = easeOut(clamp01(t * 1.4)) * width;
   const tail = easeIn(t) * width;
   for (let index = -2; index <= 2; index++) {
-    context.globalAlpha = 0.9 - Math.abs(index) * 0.18;
+    context.globalAlpha = 0.6 - Math.abs(index) * 0.12;
     context.fillStyle = css(index % 2 === 0 ? theme.primary : theme.secondary);
-    const thickness = (index === 0 ? 6 : 3) * effect.scale;
+    const thickness = (index === 0 ? 3 : 1.5) * effect.scale;
     // 1本ずつ少しずらして走らせる
     const lag = Math.abs(index) * 0.06 * width;
     context.fillRect(tail - lag, effect.y + index * gap - thickness / 2, Math.max(0, head - tail), thickness);
@@ -116,18 +124,18 @@ function sweep({ context, width, theme }: Canvas, effect: Effect, t: number) {
 function confetti({ context, theme }: Canvas, effect: Effect, t: number) {
   const random = seeded(effect.seed);
   const colors: Hsl[] = [theme.primary, theme.secondary, theme.deep, theme.glow];
-  const count = Math.round(22 * effect.scale);
+  const count = Math.round(12 * effect.scale);
   for (let index = 0; index < count; index++) {
     const angle = random() * Math.PI * 2;
-    const speed = (180 + random() * 320) * effect.scale;
+    const speed = (110 + random() * 200) * effect.scale;
     const x = effect.x + Math.cos(angle) * speed * easeOut(t);
     // 重力で少し落ちる
     const y = effect.y + Math.sin(angle) * speed * easeOut(t) + 260 * t * t;
-    const size = 5 + random() * 9;
+    const size = 3 + random() * 6;
     context.save();
     context.translate(x, y);
     context.rotate(random() * Math.PI + t * (random() - 0.5) * 12);
-    context.globalAlpha = 1 - t * t;
+    context.globalAlpha = (1 - t * t) * 0.7;
     context.fillStyle = css(colors[index % colors.length]!);
     if (index % 3 === 0) {
       context.beginPath();
@@ -144,7 +152,7 @@ function confetti({ context, theme }: Canvas, effect: Effect, t: number) {
 function spinner({ context, theme }: Canvas, effect: Effect, t: number) {
   const random = seeded(effect.seed);
   const sides = 3 + Math.floor(random() * 4);
-  const radius = effect.scale * (24 + 230 * easeOut(t));
+  const radius = effect.scale * (18 + 150 * easeOut(t));
   const polygon = (r: number, turn: number) => {
     context.beginPath();
     for (let corner = 0; corner < sides; corner++) {
@@ -153,15 +161,125 @@ function spinner({ context, theme }: Canvas, effect: Effect, t: number) {
     }
     context.closePath();
   };
-  context.globalAlpha = (1 - t) * 0.18;
+  context.globalAlpha = (1 - t) * 0.1;
   context.fillStyle = css(theme.secondary);
   polygon(radius * 0.7, -t * 1.5);
   context.fill();
-  context.globalAlpha = 1 - t;
+  context.globalAlpha = (1 - t) * 0.65;
   context.strokeStyle = css(theme.primary);
-  context.lineWidth = 4 * effect.scale * (1 - t) + 1;
+  context.lineWidth = 2 * effect.scale * (1 - t) + 1;
   polygon(radius, t * 2.4);
   context.stroke();
+}
+
+/** やわらかな光が、押した位置からふわっと広がって消える */
+function bloom({ context, theme }: Canvas, effect: Effect, t: number) {
+  const radius = effect.scale * (30 + 120 * easeOut(t));
+  const gradient = context.createRadialGradient(effect.x, effect.y, 0, effect.x, effect.y, radius);
+  gradient.addColorStop(0, css(theme.glow, 0.6 * (1 - t)));
+  gradient.addColorStop(0.5, css(theme.primary, 0.25 * (1 - t)));
+  gradient.addColorStop(1, css(theme.primary, 0));
+  context.fillStyle = gradient;
+  context.beginPath();
+  context.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+  context.fill();
+}
+
+/** 細い斜めの線が、押した位置をすっと抜ける */
+function streak({ context, theme }: Canvas, effect: Effect, t: number) {
+  const random = seeded(effect.seed);
+  const angle = (random() < 0.5 ? -1 : 1) * (0.35 + random() * 0.5);
+  const length = 260 * effect.scale;
+  const head = easeOut(t) * length * 2 - length;
+  const tail = easeIn(t) * length * 2 - length;
+  context.globalAlpha = 0.6 * (1 - t * 0.5);
+  context.strokeStyle = css(theme.secondary);
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(effect.x + Math.cos(angle) * tail, effect.y + Math.sin(angle) * tail);
+  context.lineTo(effect.x + Math.cos(angle) * head, effect.y + Math.sin(angle) * head);
+  context.stroke();
+}
+
+/** 小さな点が、弧を描いて扇状に広がる */
+function fan({ context, theme }: Canvas, effect: Effect, t: number) {
+  const random = seeded(effect.seed);
+  const facing = random() * Math.PI * 2;
+  const count = 9;
+  const reach = effect.scale * (20 + 110 * easeOut(t));
+  context.fillStyle = css(theme.primary);
+  for (let index = 0; index < count; index++) {
+    const angle = facing + ((index / (count - 1)) - 0.5) * Math.PI * 0.9;
+    context.globalAlpha = (1 - t) * 0.65;
+    context.beginPath();
+    context.arc(effect.x + Math.cos(angle) * reach, effect.y + Math.sin(angle) * reach, 2.5 * effect.scale + 1, 0, Math.PI * 2);
+    context.fill();
+  }
+}
+
+/** 6枚の楕円が、花びらのように開いて消える */
+function petals({ context, theme }: Canvas, effect: Effect, t: number) {
+  const random = seeded(effect.seed);
+  const turn = random() * Math.PI;
+  const open = easeOut(t);
+  for (let index = 0; index < 6; index++) {
+    const angle = turn + (index / 6) * Math.PI * 2 + t * 0.4;
+    const distance = effect.scale * 40 * open;
+    context.save();
+    context.translate(effect.x + Math.cos(angle) * distance, effect.y + Math.sin(angle) * distance);
+    context.rotate(angle);
+    context.globalAlpha = (1 - t) * 0.35;
+    context.fillStyle = css(index % 2 === 0 ? theme.primary : theme.secondary);
+    context.beginPath();
+    context.ellipse(0, 0, effect.scale * 22 * open + 2, effect.scale * 7 + 1, 0, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
+}
+
+/** 四角の輪郭が、回りながら広がる */
+function square({ context, theme }: Canvas, effect: Effect, t: number) {
+  const size = effect.scale * (14 + 120 * easeOut(t));
+  context.save();
+  context.translate(effect.x, effect.y);
+  context.rotate(Math.PI / 4 + t * 1.2);
+  context.globalAlpha = (1 - t) * 0.55;
+  context.strokeStyle = css(theme.secondary);
+  context.lineWidth = 1.5;
+  context.strokeRect(-size / 2, -size / 2, size, size);
+  context.restore();
+}
+
+/** 小さな縦棒が、イコライザーのように伸び縮みする */
+function bars({ context, theme }: Canvas, effect: Effect, t: number) {
+  const random = seeded(effect.seed);
+  const count = 7;
+  const gap = 9 * effect.scale + 3;
+  context.fillStyle = css(theme.primary);
+  for (let index = 0; index < count; index++) {
+    const peak = (0.4 + random() * 0.6) * 70 * effect.scale;
+    // 少しずつずらして伸び、縮む
+    const local = clamp01(t * 1.3 - index * 0.04);
+    const length = peak * Math.sin(local * Math.PI);
+    context.globalAlpha = 0.5 * (1 - t * 0.6);
+    context.fillRect(effect.x + (index - (count - 1) / 2) * gap - 1.5, effect.y - length, 3, length * 2);
+  }
+}
+
+/** 小さな点が、押した位置の周りを回りながら消える */
+function orbit({ context, theme }: Canvas, effect: Effect, t: number) {
+  const random = seeded(effect.seed);
+  const count = 5;
+  const radius = effect.scale * (26 + 34 * t);
+  const start = random() * Math.PI * 2;
+  context.fillStyle = css(theme.secondary);
+  for (let index = 0; index < count; index++) {
+    const angle = start + (index / count) * Math.PI * 2 + easeOut(t) * Math.PI * 1.5;
+    context.globalAlpha = (1 - t) * 0.6;
+    context.beginPath();
+    context.arc(effect.x + Math.cos(angle) * radius, effect.y + Math.sin(angle) * radius, 2 * effect.scale + 1, 0, Math.PI * 2);
+    context.fill();
+  }
 }
 
 /** 長く押さえて離したとき、押した位置から地がその色に染まって引いていく */
@@ -169,7 +287,7 @@ function veil({ context, width, height, theme }: Canvas, effect: Effect, t: numb
   const reach = Math.hypot(width, height);
   const gradient = context.createRadialGradient(effect.x, effect.y, 0, effect.x, effect.y, reach * easeOut(t) + 1);
   gradient.addColorStop(0, css(theme.primary, 0));
-  gradient.addColorStop(0.7, css(theme.primary, 0.22 * (1 - t)));
+  gradient.addColorStop(0.7, css(theme.primary, 0.1 * (1 - t)));
   gradient.addColorStop(1, css(theme.primary, 0));
   context.globalAlpha = 1;
   context.fillStyle = gradient;
@@ -189,11 +307,11 @@ function wipe({ context, width, height, theme }: Canvas, _effect: Effect, t: num
     context.lineTo(from - height, height);
     context.closePath();
   };
-  context.globalAlpha = 0.28 * (1 - t * 0.6);
+  context.globalAlpha = 0.14 * (1 - t * 0.6);
   context.fillStyle = css(theme.primary);
   parallelogram(lead - band, lead);
   context.fill();
-  context.globalAlpha = 0.5 * (1 - t);
+  context.globalAlpha = 0.25 * (1 - t);
   context.fillStyle = css(theme.secondary);
   parallelogram(lead - band - 40, lead - band - 16);
   context.fill();
@@ -219,6 +337,13 @@ const DRAWERS: Record<EffectKind, (canvas: Canvas, effect: Effect, t: number) =>
   sweep,
   confetti,
   spinner,
+  bloom,
+  streak,
+  fan,
+  petals,
+  square,
+  bars,
+  orbit,
   veil,
   wipe,
   spark,
