@@ -53,8 +53,7 @@ describe("移り先にできる進行", () => {
   });
 
   it("ジャズ寄りの繰り返し型の進行がある", () => {
-    for (const id of ["stepwise-descent", "minor-iv", "ii-v-i-vi7"]) expect(progressionById(id)).toBeDefined();
-    expect(progressionById("stepwise-descent")!.chords).toEqual(["Fmaj7", "Em7", "Dm7", "Cmaj7"]);
+    for (const id of ["minor-iv", "ii-v-i-vi7"]) expect(progressionById(id)).toBeDefined();
     expect(progressionById("minor-iv")!.chords).toEqual(["Fmaj7", "Fm7", "Em7", "Am7"]);
     expect(progressionById("ii-v-i-vi7")!.chords).toEqual(["Dm7", "G7", "Cmaj7", "A7"]);
   });
@@ -63,6 +62,10 @@ describe("移り先にできる進行", () => {
 describe("基本の進行", () => {
   it("カノン進行はジャズに合わないので、一覧に入れない", () => {
     expect(PROGRESSIONS.map((progression) => progression.name)).not.toContain("カノン進行");
+  });
+
+  it("順次下降は伴奏を合わせづらいので、一覧に入れない", () => {
+    expect(PROGRESSIONS.map((progression) => progression.name)).not.toContain("順次下降");
   });
 
   it("基本は丸サ進行と Just the Two of Us進行。最初は丸サ進行で始める", () => {
