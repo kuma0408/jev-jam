@@ -92,6 +92,8 @@ export function createExpressiveVoice(
         Math.abs(candidate.midi - note.pitch) < Math.abs(best.midi - note.pitch) ? candidate : best,
       );
       const rate = semitoneRatio(note.pitch - nearest.midi);
+      // 読み込みが終わっていない楽器（裏で読み込み中）は、鳴らさずに飛ばす
+      if (!buffers.get(nearest.name).loaded) return null;
 
       const gain = new tone.Gain(0).connect(output);
       const source = new tone.ToneBufferSource({ url: buffers.get(nearest.name), playbackRate: rate }).connect(gain);

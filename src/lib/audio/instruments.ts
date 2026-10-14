@@ -7,7 +7,7 @@ function sampleMap(directory: string, notes: readonly string[], fileName: (note:
   return Object.fromEntries(notes.map((note) => [note, `/samples/${directory}/${fileName(note)}.mp3`]));
 }
 
-export type SoloVoice = "sax-recorded" | "tenor-sax" | "electric-piano";
+export type SoloVoice = "sax-recorded" | "trumpet" | "trombone" | "tenor-sax" | "electric-piano";
 
 export type SoloInstrument = {
   label: string;
@@ -37,6 +37,33 @@ export const SOLO_INSTRUMENTS: Record<SoloVoice, SoloInstrument> = {
     ),
     range: { low: 53, high: 77 },
     // 実測で他の音源より約18dB大きく、頭に約28msの無音がある
+    gainDb: -12,
+    startOffset: 0.025,
+    breath: 1,
+  },
+  trumpet: {
+    label: "トランペット（楽器の録音）",
+    samples: sampleMap(
+      "trumpet",
+      ["F3", "A3", "C4", "D#4", "F4", "G4", "A#4", "D5", "F5", "A5", "C6"],
+      (note) => note.replace("#", "s"),
+    ),
+    // 録音は F3〜C6。ジャズのソロでよく使う B♭3〜A5 に絞る
+    range: { low: 58, high: 81 },
+    // 実測でサックスの録音と同じくらいの大きさ（-11〜-15dB）で、頭に約28msの無音がある
+    gainDb: -12,
+    startOffset: 0.025,
+    breath: 0.8,
+  },
+  trombone: {
+    label: "トロンボーン（楽器の録音）",
+    samples: sampleMap(
+      "trombone",
+      ["C3", "D3", "D#3", "F3", "G#3", "A#3", "C4", "C#4", "D4", "D#4", "F4"],
+      (note) => note.replace("#", "s"),
+    ),
+    // 録音は C3〜F4 を置いている（配布元にはもっと低い音もあるが、ソロでは使わないので置いていない）
+    range: { low: 48, high: 67 },
     gainDb: -12,
     startOffset: 0.025,
     breath: 1,

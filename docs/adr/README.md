@@ -36,4 +36,7 @@
 | [0030](0030-trade-two-bars-with-jev.md) | Jevと2小節ずつ交代で弾く（掛け合い）。Jevには「どう応えるか」を選ばせる | 設計判断 | Accepted | 2026-10-13 |
 | [0031](0031-tap-only-simple-ui.md) | 操作は「叩く」だけにする。叩く高さで盛り上がりを決め、ほかは「裏側を見る」に隠す | 設計判断 | Superseded by 0032（盛り上がりの決め方） | 2026-10-14 |
 | [0032](0032-tap-the-staff.md) | 五線譜を叩いて弾く。叩いた位置の音をいちばん上にした和音を鳴らす | 設計判断 | Accepted | 2026-10-14 |
-| [0033](0033-hold-to-sustain-and-try-three-views.md) | 押している間は和音を伸ばす。音符の表示をやめ、3種類の表示を見比べて選ぶ | 設計判断 | Proposed | 2026-10-14 |
+| [0033](0033-hold-to-sustain-and-try-three-views.md) | 押している間は和音を伸ばす。音符の表示をやめ、3種類の表示を見比べて選ぶ | 設計判断 | Accepted（0034で決定） | 2026-10-14 |
+| [0034](0034-ribbon-view-with-golden-melody.md) | 表示は「光の帯と線」に決める。Jevの旋律は金色の光の線にする | 設計判断 | Accepted | 2026-10-14 |
+| [0035](0035-solo-follows-comping-touch.md) | ソロは伴奏の質感（押した回数と伸ばした長さ）に合わせて、しっとりにも激しくもなる | 設計判断 | Accepted | 2026-10-14 |
+| [0036](0036-breath-noise-and-brass-samples.md) | 管楽器に息の音を重ねる。トランペットとトロンボーンの録音を足す | 工夫 | Accepted | 2026-10-14 |

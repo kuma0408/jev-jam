@@ -861,10 +861,13 @@ export function useSession(): Session {
       engine.bass.volume.value = BASS_GAIN_DB;
       engineRef.current = engine;
 
+      // 裏で読み込む楽器が失敗しても、画面に未処理のエラーを出さない（その楽器は鳴らないだけ）
+      for (const voice of Object.values(solos)) voice.loaded.catch(() => {});
       // 音源ファイルと残響の準備、最初の小節のソロの取得が終わってから始める
       await Promise.all([
         tone.loaded(),
-        ...Object.values(solos).map((voice) => voice.loaded),
+        // 選んでいる楽器だけを待つ。ほかの楽器は裏で読み込み、終わるまでは切り替えても鳴らない
+        solos[settingsRef.current.voice].loaded,
         reverb.ready,
         prepare(engine, [START_CHORD], SOLO_START_PITCH, {}, { sustained: false, retargetable: false }),
       ]);
