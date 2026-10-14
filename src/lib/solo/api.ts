@@ -61,6 +61,18 @@ export type SoloMemo = {
  */
 export type Trade = { part: "answer" | "close"; call: CallSummary | null };
 
+/**
+ * 8小節の区切りの前の小節で、次の区切りでいまの進行を続けるか、別の進行へ移るかをJevに聞くための情報。
+ * options の id は移り先の進行のID、mood はその雰囲気の説明（英語）
+ */
+export type SectionQuestion = {
+  current: string | null;
+  currentMood?: string;
+  /** いまの進行を何小節続けているか */
+  barsOn: number;
+  options: { id: string; mood: string }[];
+};
+
 /** 1小節ぶんのソロ */
 export type SoloBar = {
   chord: string;
@@ -81,6 +93,8 @@ export type SoloBar = {
    * 1音ずつ選ぶ方式には無い
    */
   plan?: { cells: [Cell, Cell]; render: RenderOptions };
+  /** 区切りで進行を続けるか移るかをJevが選んだ結果。choice は "stay" か移り先の進行のID */
+  section?: { choice: string; odds: Record<string, number> };
   /** 掛け合いで、相手のフレーズにどう応えるかをJevが選んだ結果。odds はJevが返した確率 */
   reply?: { id: string; label: string; odds: Record<string, number> };
 };
@@ -111,6 +125,8 @@ export type SoloRequest = {
   mock?: boolean;
   /** 掛け合いでの役割。掛け合いでなければ省く */
   trade?: Trade;
+  /** 区切りの前の小節なら、進行を続けるか移るかの質問 */
+  section?: SectionQuestion;
   memo: SoloMemo;
 };
 

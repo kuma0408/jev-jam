@@ -7,8 +7,8 @@ import { stepOf } from "../../lib/music/staff.ts";
 export type YouMark = { kind: "you"; start: number; end: number | null; pitches: number[] };
 /** Jevのソロの1音 */
 export type JevMark = { kind: "jev"; start: number; seconds: number; pitch: number; strength: number };
-/** 小節の頭と、コードが変わったところ */
-export type BarMark = { kind: "bar"; at: number; chord: string };
+/** 小節の頭と、コードが変わったところ。section は、ここから別の定番進行へ移ったときの進行の名前 */
+export type BarMark = { kind: "bar"; at: number; chord: string; section?: string };
 export type Mark = YouMark | JevMark | BarMark;
 
 /** 描くのに使う寸法と道具 */
@@ -103,6 +103,15 @@ function chordNames(frame: Frame, marks: readonly Mark[], size: number, color: s
     if (x < frame.leftEdge) continue;
     context.globalAlpha = alpha * fadeAt(frame, x);
     context.fillText(mark.chord, x + 6, frame.yOf(TOP_STEP));
+    if (mark.section) {
+      // 別の定番進行へ移ったところには、コード名の後ろに小さく進行の名前を書く
+      const chordWidth = context.measureText(mark.chord).width;
+      context.save();
+      context.font = `700 ${Math.round(size * 0.5)}px ${frame.displayFont}, "Helvetica Neue", Arial, sans-serif`;
+      context.fillStyle = `rgb(${GOLD})`;
+      context.fillText(`→ ${mark.section}`, x + 14 + chordWidth, frame.yOf(TOP_STEP));
+      context.restore();
+    }
   }
   context.globalAlpha = 1;
 }

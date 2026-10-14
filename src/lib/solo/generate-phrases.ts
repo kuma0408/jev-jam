@@ -1,7 +1,7 @@
 import type { DecisionClient } from "../jev/client.ts";
 import { sampleFromDistribution } from "../music/sample.ts";
 import { aimPitch, fitsChord } from "./aim.ts";
-import type { SoloBar, SoloMemo, Trade } from "./api.ts";
+import type { SectionQuestion, SoloBar, SoloMemo, Trade } from "./api.ts";
 import { REPLIES, type ReplyId, describeCall, replyEnergy } from "./call.ts";
 import type { Cell } from "./cells.ts";
 import { CONTOURS, type Contour, biasByDirection, contourById, favorLeaps } from "./contours.ts";
@@ -54,7 +54,16 @@ export type PhraseBarsInput = {
   retargetable?: boolean;
   /** 掛け合いでの役割。掛け合いでなければ省く */
   trade?: Trade;
+  /** 区切りの前の小節なら、進行を続けるか移るかの質問 */
+  section?: SectionQuestion;
 };
+
+/** いまの進行を続けている長さの言い方。Jevは数えるのが苦手なので、小節数ではなく言葉で伝える */
+function progressionAge(barsOn: number): string {
+  if (barsOn < 8) return "It has just started.";
+  if (barsOn < 24) return "It has been going for a while.";
+  return "It has been going for a long time.";
+}
 
 /** 掛け合いでの位置。相手と交代で弾いていることと、いまが応えのどこかを伝える */
 const TRADE_POSITIONS: Record<Trade["part"], string> = {
@@ -265,6 +274,11 @@ export async function generatePhraseBars(
       ? { still_sounding: "The last note of the previous bar is still being held as this bar begins." }
       : {}),
     ...(input.memo.dynamics ? { previous_bar_volume: input.memo.dynamics } : {}),
+    ...(input.section
+      ? {
+          current_progression: `${input.section.current ?? "A free-flowing progression"}. ${progressionAge(input.section.barsOn)}`,
+        }
+      : {}),
   };
 
   // 前の小節から引き継ぐフレーズ。前半が休みなら後半を使う
@@ -390,7 +404,24 @@ export async function generatePhraseBars(
     );
   }
 
+  if (input.section) {
+    firstQuestions.section = question(
+      "The band is reaching the end of an eight-bar section. For the next section, should they keep playing the current chord progression, or move to a different one? Keep it if it has only just started. If it has been going for a while, consider moving to the mood that fits how the session feels now.",
+      [
+        {
+          id: "stay",
+          description: `Keep playing the current progression.${input.section.currentMood ? ` ${input.section.currentMood}` : ""}`,
+        },
+        ...input.section.options.map((option) => ({ id: option.id, description: option.mood })),
+      ],
+    );
+  }
+
   const first = await client.decide(baseState, firstQuestions);
+  // 区切りで続けるか移るか。抽選して、確率と一緒に画面側へ返す
+  const section = first.section
+    ? { choice: sampleFromDistribution(first.section.probabilities, random), odds: first.section.probabilities }
+    : null;
   // 新しいまとまりに入るときは、直前の形と流れを「過去のもの」に回す
   const pastShapes = planning
     ? [...(input.memo.shape ? [input.memo.shape] : []), ...(input.memo.pastShapes ?? [])].slice(0, MAX_PAST_PLANS)
@@ -576,6 +607,7 @@ export async function generatePhraseBars(
         ...(reply ? { reply: { id: reply, energy } } : {}),
       },
       plan: { cells: composed, render },
+      ...(section ? { section } : {}),
       ...(reply && first.reply ? { reply: { id: reply, label: REPLIES[reply].label, odds: first.reply.probabilities } } : {}),
     };
   });

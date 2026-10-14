@@ -8,6 +8,13 @@ export type ChordCandidate = {
   reason: string;
   /** この小節の後半（3拍目から）に置くコード。1小節に2つのコードを半分ずつ置く進行の続きのときだけある */
   then?: string;
+  /** どの定番進行の続きか（いちばん長く一致した進行の名前）。定番の続きでない候補には無い */
+  progression?: string;
+};
+
+export type CandidateOptions = {
+  /** いま乗っている進行の名前。その進行の続きを、ほかの一致より優先して先頭にする */
+  prefer?: string;
 };
 
 export const MAX_CANDIDATES = 6;
@@ -16,6 +23,8 @@ export const MIN_CANDIDATES = 3;
 /** 一致の長さはここで頭打ちにする。長い進行に一度乗ると、そこから抜けられなくなるのを防ぐ */
 const MAX_MATCH_LENGTH = 4;
 const JAZZ_WEIGHT = 2;
+/** 乗っている進行の一致に足す長さ。一致の長さの上限より大きくして、必ず先頭にする */
+const PREFER_BONUS = MAX_MATCH_LENGTH + 1;
 const POP_WEIGHT = 1;
 
 /** 進行の一覧に出てくるすべてのコード */
@@ -79,7 +88,7 @@ type Support = { length: number; weight: number; name: string; then?: string };
  *
  * 同じコードにとどまる候補を必ず入れ、それでも少なければキーの中の落ち着き先で補う。
  */
-export function nextChordCandidates(history: readonly string[]): ChordCandidate[] {
+export function nextChordCandidates(history: readonly string[], options: CandidateOptions = {}): ChordCandidate[] {
   const current = history.at(-1);
   if (current === undefined || !KNOWN_CHORDS.includes(current)) {
     throw new Error(`進行の一覧に無いコードです: ${current ?? "（履歴が空）"}`);
@@ -94,7 +103,8 @@ export function nextChordCandidates(history: readonly string[]): ChordCandidate[
       const next = chordAt(progression, position + 1);
       if (next === undefined) return;
 
-      const length = matchLength(progression, position, flow);
+      // 乗っている進行の続きは、どんな長い一致よりも優先する
+      const length = matchLength(progression, position, flow) + (progression.name === options.prefer ? PREFER_BONUS : 0);
       const weight = progression.pop ? POP_WEIGHT : JAZZ_WEIGHT;
       const then = secondHalfAfter(progression, position + 1);
       const support = supports.get(next);
@@ -124,6 +134,7 @@ export function nextChordCandidates(history: readonly string[]): ChordCandidate[
       chord,
       adventure,
       reason: support.then ? `「${support.name}」の続き（後半は ${support.then}）` : `「${support.name}」の続き`,
+      progression: support.name,
       ...(support.then ? { then: support.then } : {}),
     }));
 

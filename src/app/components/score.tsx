@@ -136,7 +136,7 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
         if (holding) holding.end = at;
         holding = null;
       } else if (event.kind === "bar") {
-        marks.push({ kind: "bar", at, chord: event.chord });
+        marks.push({ kind: "bar", at, chord: event.chord, ...(event.section ? { section: event.section } : {}) });
       } else {
         return;
       }

@@ -7,6 +7,7 @@ import {
   type SoloMemo,
   type SoloRequest,
   type SoloResponse,
+  type SectionQuestion,
   type Trade,
 } from "../../../lib/solo/api.ts";
 import { CALL_DENSITIES, CALL_DIRECTIONS, isReplyId } from "../../../lib/solo/call.ts";
@@ -74,6 +75,7 @@ async function generateAll(client: DecisionClient, body: SoloRequest): Promise<P
         sustained: body.sustained,
         retargetable: body.retargetable,
         ...(body.trade ? { trade: body.trade } : {}),
+        ...(body.section ? { section: body.section } : {}),
       });
       return bars.map((value) => ({ status: "fulfilled", value }));
     } catch (reason) {
@@ -182,6 +184,31 @@ function parseTrade(value: unknown): Trade {
   return { part, call: { density: densityValue, direction: directionValue, lastPitch } };
 }
 
+const MAX_SECTION_OPTIONS = 12;
+const ID_PATTERN = /^[a-z0-9-]{1,40}$/;
+/** Jevに渡す英語の説明。表示できる文字だけを、長すぎない範囲で受け付ける */
+const MOOD_PATTERN = /^[\x20-\x7e]{1,200}$/;
+const NAME_PATTERN = /^[^\x00-\x1f]{1,60}$/;
+
+function parseSection(value: unknown): SectionQuestion {
+  if (typeof value !== "object" || value === null) fail("section");
+  const { current, currentMood, barsOn, options } = value as Record<string, unknown>;
+  if (current !== null && (typeof current !== "string" || !NAME_PATTERN.test(current))) fail("section.current");
+  if (currentMood !== undefined && (typeof currentMood !== "string" || !MOOD_PATTERN.test(currentMood))) {
+    fail("section.currentMood");
+  }
+  if (typeof barsOn !== "number" || !Number.isInteger(barsOn) || barsOn < 0 || barsOn > 10_000) fail("section.barsOn");
+  if (!Array.isArray(options) || options.length > MAX_SECTION_OPTIONS) fail("section.options");
+  const parsed = options.map((option) => {
+    const { id, mood } = (typeof option === "object" && option !== null ? option : {}) as Record<string, unknown>;
+    if (typeof id !== "string" || !ID_PATTERN.test(id) || typeof mood !== "string" || !MOOD_PATTERN.test(mood)) {
+      fail("section.options の要素");
+    }
+    return { id, mood };
+  });
+  return { current: current as string | null, ...(currentMood ? { currentMood: currentMood as string } : {}), barsOn, options: parsed };
+}
+
 function parseRequest(value: unknown): SoloRequest {
   if (typeof value !== "object" || value === null) fail("本体がオブジェクトではない");
   // 後から足した項目（energy 以降）は、送られてこなければ既定値で受け付ける。
@@ -199,6 +226,7 @@ function parseRequest(value: unknown): SoloRequest {
     retargetable = false,
     mock = false,
     trade,
+    section,
   } = value as Record<string, unknown>;
 
   if (!Array.isArray(chords) || chords.length === 0 || chords.length > MAX_CHORDS) fail("chords の数");
@@ -230,6 +258,7 @@ function parseRequest(value: unknown): SoloRequest {
     retargetable,
     mock: mock === true,
     ...(trade === undefined ? {} : { trade: parseTrade(trade) }),
+    ...(section === undefined ? {} : { section: parseSection(section) }),
     memo,
   };
 }
