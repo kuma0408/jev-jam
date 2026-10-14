@@ -51,6 +51,10 @@ let YOU = "42, 98, 242";
 const BLOOM_SECONDS = 0.6;
 /** Jevの音と音の間がこれ以上空いたら、旋律の線を切る（秒） */
 const PHRASE_GAP_SECONDS = 0.6;
+/** コード名と次のコード名の間に空ける幅（px） */
+const CHORD_NAME_GAP = 12;
+/** コード名を、ここまで縮めても入らなければ書かない */
+const MIN_CHORD_NAME_SCALE = 0.5;
 /** いちばん上に書く位置（コード名など） */
 const TOP_STEP = 16;
 
@@ -58,7 +62,6 @@ const COLORS = {
   ink: "#17132e",
   inkSoft: "#55516b",
   line: "#7b7890",
-  red: "#cf2e25",
 };
 
 const rgb = (color: Hsl) => hslToRgb(color).join(", ");
@@ -109,25 +112,32 @@ function clef(frame: Frame, alpha: number) {
 
 function chordNames(frame: Frame, marks: readonly Mark[], size: number, color: string, alpha = 1) {
   const { context } = frame;
-  context.font = `800 ${Math.round(size)}px ${frame.displayFont}, "Helvetica Neue", Arial, sans-serif`;
+  const fontOf = (pixels: number, weight = 800) =>
+    `${weight} ${Math.round(pixels)}px ${frame.displayFont}, "Helvetica Neue", Arial, sans-serif`;
+  const bars = marks
+    .filter((mark): mark is BarMark => mark.kind === "bar")
+    .map((mark) => ({ mark, x: frame.xAt(mark.at) }))
+    .sort((a, b) => a.x - b.x);
   context.textBaseline = "alphabetic";
-  context.fillStyle = color;
-  for (const mark of marks) {
-    if (mark.kind !== "bar") continue;
-    const x = frame.xAt(mark.at);
-    if (x < frame.leftEdge) continue;
+  bars.forEach(({ mark, x }, index) => {
+    if (x < frame.leftEdge) return;
+    // 次のコード名とぶつからない大きさにする（速いテンポや、1小節に2つのコードのとき）。半分まで縮めても入らなければ書かない
+    const room = (bars[index + 1]?.x ?? Number.POSITIVE_INFINITY) - x - CHORD_NAME_GAP;
+    context.font = fontOf(size);
+    const natural = context.measureText(mark.chord).width;
+    const fit = Math.min(1, room / natural);
+    if (fit < MIN_CHORD_NAME_SCALE) return;
+    context.font = fontOf(size * fit);
     context.globalAlpha = alpha * fadeAt(frame, x);
+    context.fillStyle = color;
     context.fillText(mark.chord, x + 6, frame.yOf(TOP_STEP));
     if (mark.section) {
-      // 別の定番進行へ移ったところには、コード名の後ろに小さく進行の名前を書く
-      const chordWidth = context.measureText(mark.chord).width;
-      context.save();
-      context.font = `700 ${Math.round(size * 0.5)}px ${frame.displayFont}, "Helvetica Neue", Arial, sans-serif`;
+      // 別の定番進行へ移ったところには、コード名の下に小さく進行の名前を書く（次のコード名とぶつからない）
+      context.font = fontOf(size * 0.45, 700);
       context.fillStyle = `rgb(${JEV})`;
-      context.fillText(`→ ${mark.section}`, x + 14 + chordWidth, frame.yOf(TOP_STEP));
-      context.restore();
+      context.fillText(mark.section, x + 6, frame.yOf(TOP_STEP - 1.6));
     }
-  }
+  });
   context.globalAlpha = 1;
 }
 
@@ -297,7 +307,7 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
 
   // いま
   context.globalAlpha = 0.5;
-  context.fillStyle = COLORS.red;
+  context.fillStyle = `rgb(${YOU})`;
   context.fillRect(frame.nowX, frame.yOf(TOP_STEP - 1.5), 1.5, frame.height - frame.yOf(TOP_STEP - 1.5) - 8);
   context.globalAlpha = 1;
 }

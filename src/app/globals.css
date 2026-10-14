@@ -1419,32 +1419,98 @@ th {
   height: 100%;
 }
 
+/* 開始の合図。脈打つ円の中に再生の三角。押したくなる形で、文字を使わずに「押せば始まる」を伝える */
 .score-start {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
-  background: rgba(255, 255, 255, 0.55);
-  font-size: clamp(1.75rem, 6vw, 3.25rem);
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  text-align: center;
 }
 
-.score-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 24px;
-  margin: 10px 4px 0;
+.score-start-ring,
+.score-start-play {
+  grid-area: 1 / 1;
 }
 
-.score-status {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.875rem;
+.score-start-ring {
+  width: clamp(120px, 18vw, 180px);
+  aspect-ratio: 1;
+  border: 3px solid var(--theme-primary, var(--blue));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--theme-primary, var(--blue)) 12%, transparent);
+  animation: start-pulse 1.8s ease-in-out infinite;
 }
+
+.score-start-play {
+  width: clamp(34px, 5vw, 48px);
+  aspect-ratio: 0.9;
+  margin-left: 8px;
+  background: var(--theme-primary, var(--blue));
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+/* 準備中は、輪の一部を欠けさせて回す */
+.score-start[data-starting="true"] .score-start-ring {
+  border-right-color: transparent;
+  animation: start-spin 0.9s linear infinite;
+}
+
+.score-start[data-starting="true"] .score-start-play {
+  opacity: 0.3;
+}
+
+@keyframes start-pulse {
+  0%,
+  100% {
+    scale: 1;
+    opacity: 0.85;
+  }
+  50% {
+    scale: 1.08;
+    opacity: 1;
+  }
+}
+
+@keyframes start-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* 停止。文字を出さず、四角の形だけで示す */
+.stop {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  border: 2px solid var(--theme-deep, var(--ink));
+  border-radius: 50%;
+  cursor: pointer;
+  transition: scale 120ms ease-out;
+}
+
+.stop:hover {
+  scale: 1.06;
+}
+
+.stop:active {
+  scale: 0.96;
+}
+
+.stop:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.stop-icon {
+  width: 14px;
+  height: 14px;
+  background: var(--theme-deep, var(--ink));
+  border-radius: 2px;
+}
+
 
 /* ---- 裏側を見る: 遊ぶのに要らないもの ---- */
 
@@ -1468,6 +1534,10 @@ th {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .score-start-ring {
+    animation: none;
+  }
+
   .transport,
   .chip {
     transition: none;

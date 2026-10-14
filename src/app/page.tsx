@@ -108,9 +108,9 @@ export default function Page() {
           <h1 className="brand">Jev Session</h1>
           {playing && (
             <div className="top-now">
-              <button type="button" className="transport" data-playing="true" onClick={session.stop}>
-                <span className="transport-icon" aria-hidden="true" />
-                停止
+              {/* 文字は出さず、四角の形で「止める」を示す。読み上げには名前を付ける */}
+              <button type="button" className="stop" aria-label="停止" title="停止" onClick={session.stop}>
+                <span className="stop-icon" aria-hidden="true" />
               </button>
             </div>
           )}

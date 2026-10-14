@@ -5,7 +5,7 @@
 import { useEffect, useRef } from "react";
 import { ENERGY, type Energy } from "../../lib/solo/energy.ts";
 import type { Session, SessionEvent, SessionStatus } from "../session/use-session.ts";
-import { themeFor } from "../../lib/visual/palette.ts";
+import { css, themeFor } from "../../lib/visual/palette.ts";
 import { notePress } from "../visual/pointer.ts";
 import { currentTheme, isThemeMoving, moveThemeTo } from "../visual/theme-store.ts";
 import { type Frame, type Mark, type YouMark, drawScore } from "./score-draw.ts";
@@ -113,7 +113,7 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
       // スペースキーで押す位置の印
       const cursor = cursorRef.current;
       if (cursor !== null) {
-        context.strokeStyle = "#2a62f2";
+        context.strokeStyle = css(view.theme.primary);
         context.lineWidth = 2;
         context.beginPath();
         context.ellipse(nowX, yOf(cursor), half * 1.6, half * 1.2, 0, 0, Math.PI * 2);
@@ -219,10 +219,17 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
         }}
       >
         <canvas ref={canvasRef} className="score-canvas" aria-hidden="true" />
-        {!playing && <span className="score-start">{status === "starting" ? "じゅんび中…" : "押して、はじめる"}</span>}
+        {/* 開始の合図は文字ではなく、脈打つ円と再生の三角で示す。準備中は円が回る */}
+        {!playing && (
+          <span className="score-start" data-starting={status === "starting"} aria-hidden="true">
+            <span className="score-start-ring" />
+            <span className="score-start-play" />
+          </span>
+        )}
       </button>
-      <div className="score-foot">
-        <p id="score-status" className="score-status" role="status">
+      {/* 説明は画面に出さず、読み上げにだけ伝える */}
+      <div className="visually-hidden">
+        <p id="score-status" role="status">
           {playing
             ? `盛り上がり「${ENERGY[energy].label}」。上の方ほど高い和音。長く押さえるとしっとり、連打すると激しくなります。`
             : "押すと、バンドとJevのソロが始まります。"}
