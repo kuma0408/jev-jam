@@ -1408,6 +1408,194 @@ th {
   }
 }
 
+/* ---- 叩く面: このアプリの操作はここを叩くことだけ ---- */
+
+.top {
+  align-items: center;
+  min-height: 64px;
+  padding: 8px 0;
+}
+
+.top-now {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.top-chord {
+  font-family: var(--font-latin);
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 800;
+  font-stretch: 75%;
+  line-height: 1;
+}
+
+.top-now .transport {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 0.9375rem;
+}
+
+.tap-stage {
+  margin-top: 16px;
+}
+
+.tap-surface {
+  position: relative;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  height: clamp(320px, 58vh, 620px);
+  padding: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.55);
+  border: 2px solid var(--ink);
+  border-radius: 24px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* 連打したときに、文字の選択や拡大、スクロールが起きないようにする */
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tap-surface:focus-visible {
+  outline: 4px solid var(--focus);
+  outline-offset: 4px;
+}
+
+/* 上から 激しい → 静か。上ほど濃く塗る */
+.tap-band {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 20px;
+  border-top: 1px dashed var(--line-strong);
+  transition: background-color 300ms ease-out;
+}
+
+.tap-band:first-child {
+  border-top: 0;
+}
+
+.tap-band[data-level="4"] {
+  background: rgba(207, 46, 37, 0.1);
+}
+
+.tap-band[data-level="3"] {
+  background: rgba(125, 59, 230, 0.08);
+}
+
+.tap-band[data-level="2"] {
+  background: rgba(42, 98, 242, 0.06);
+}
+
+.tap-band[data-level="1"] {
+  background: rgba(12, 133, 88, 0.05);
+}
+
+.tap-band[data-active="true"] {
+  background: rgba(23, 19, 46, 0.12);
+}
+
+.tap-band-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.tap-band[data-active="true"] .tap-band-label {
+  color: var(--ink);
+  font-size: 1.125rem;
+}
+
+.tap-band-now {
+  padding: 2px 10px;
+  background: var(--ink);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 0.8125rem;
+}
+
+/* スペースキーで叩くときの高さの印 */
+.tap-cursor {
+  position: absolute;
+  left: 12px;
+  bottom: calc(var(--height) * 100%);
+  translate: 0 50%;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
+.tap-ripple {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  margin: -70px 0 0 -70px;
+  border: 3px solid var(--blue);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: tap-ripple 700ms ease-out forwards;
+}
+
+@keyframes tap-ripple {
+  from {
+    opacity: 0.9;
+    scale: 0.2;
+  }
+  to {
+    opacity: 0;
+    scale: 1;
+  }
+}
+
+.tap-start {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: clamp(1.75rem, 6vw, 3.5rem);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.tap-status {
+  margin: 10px 4px 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+/* ---- 裏側を見る: 遊ぶのに要らないもの ---- */
+
+.backstage {
+  margin-top: 32px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.backstage > summary {
+  display: inline-flex;
+  padding: 8px 4px;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.backstage[open] > summary {
+  margin-bottom: 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .transport,
   .chip {
@@ -1422,5 +1610,11 @@ th {
   .chip:hover,
   .chip:active {
     translate: none;
+  }
+
+  /* 波紋は広げず、その場で薄く消すだけにする */
+  .tap-ripple {
+    animation: none;
+    opacity: 0.5;
   }
 }

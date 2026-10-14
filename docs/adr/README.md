@@ -32,5 +32,6 @@
 | [0026](0026-play-the-chord-and-piano-roll.md) | コードは「選ぶ」のではなく「弾く」。弾いた瞬間に鳴り、バンドが次の拍から付いてくる | 設計判断 | Accepted | 2026-10-13 |
 | [0027](0027-verify-with-mock-not-jev.md) | 動作確認はダミーで行い、本物のJevは振る舞いを知りたいときだけ呼ぶ | 設計判断 | Accepted | 2026-10-13 |
 | [0028](0028-play-freely-chords-and-notes.md) | コードも音も、いつでも好きに弾けるようにする | 設計判断 | Accepted | 2026-10-13 |
-| [0029](0029-user-plays-melody-on-fitting-pads.md) | 旋律はユーザーが弾く。弾けない人のために「合う音だけの鍵盤」を用意する | 設計判断 | Accepted | 2026-10-13 |
+| [0029](0029-user-plays-melody-on-fitting-pads.md) | 旋律はユーザーが弾く。弾けない人のために「合う音だけの鍵盤」を用意する | 設計判断 | Superseded by 0031 | 2026-10-13 |
 | [0030](0030-trade-two-bars-with-jev.md) | Jevと2小節ずつ交代で弾く（掛け合い）。Jevには「どう応えるか」を選ばせる | 設計判断 | Accepted | 2026-10-13 |
+| [0031](0031-tap-only-simple-ui.md) | 操作は「叩く」だけにする。叩く高さで盛り上がりを決め、ほかは「裏側を見る」に隠す | 設計判断 | Accepted | 2026-10-14 |

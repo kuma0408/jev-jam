@@ -2,29 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { BarLogPanel } from "./components/bar-log.tsx";
-import { isEnergy } from "../lib/solo/energy.ts";
 import { ControlDock } from "./components/control-dock.tsx";
-import { EnergyDial } from "./components/energy-dial.tsx";
-import { JamPad } from "./components/jam-pad.tsx";
 import { MelodyPads, PAD_KEY_CODES } from "./components/melody-pads.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
+import { TapStage } from "./components/tap-stage.tsx";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
 import { PianoRoll } from "./components/piano-roll.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { TurnBanner } from "./components/turn-banner.tsx";
 import { useSession } from "./session/use-session.ts";
 
+/** キーボードで叩くときの高さの段数。盛り上がりの段数と同じ */
+const KEYBOARD_LEVELS = 4;
+
 export default function Page() {
   const session = useSession();
   const { status, candidates, nextChord, choose } = session;
   const playing = status === "playing";
 
-  const { energy } = session.settings;
-  const { updateSettings, tap, noteOn, noteOff, padOn, padOff, releaseChord } = session;
+  const { tap, noteOn, noteOff, padOn, padOff, releaseChord } = session;
   // 旋律を弾く鍵盤。easy は合う音だけの8鍵、piano は12音すべて
   const [keyboard, setKeyboard] = useState<"easy" | "piano">("easy");
+  // キーボードで叩くときの高さ（上下キーで4段に動かす）。最初は「ゆったり」の段
+  const [level, setLevel] = useState(1);
+  const keyboardHeight = (level + 0.5) / KEYBOARD_LEVELS;
+  // 旋律の鍵盤は、掛け合いをするときだけキーで弾ける（普段はキーを叩いても何も起きない）
+  const trading = session.settings.trade;
 
-  // 数字キーで候補を選び、再生中は上下キーで盛り上がりを動かせるようにする
+  // スペースで叩き、上下キーで叩く高さを動かす。数字キーでコードを弾ける（裏側の鍵盤を開いていなくても効く）
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // 文字を打つ場所（選択肢の一覧）にいるときだけ無視する。つまみやスライダーを触った後でも弾けるようにする
@@ -33,14 +38,18 @@ export default function Page() {
       // event.key は日本語入力がオンだと文字が取れない（"Process" になる）ので、物理キーの位置で判定する
       const { code } = event;
       // ボタンやつまみにフォーカスがあるときのスペースと上下キーは、その部品の操作として扱う
-      const onControl = event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement;
-      if (playing && !event.repeat) {
-        if (code === "Space" && !onControl) {
-          tap();
-          event.preventDefault();
-          return;
-        }
-        // 鍵盤の音。押している間だけ鳴る
+      // 叩く面そのものはボタンだが、スペースは叩く操作として扱う
+      const onSurface = event.target instanceof HTMLElement && event.target.classList.contains("tap-surface");
+      const onControl =
+        !onSurface && (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement);
+      if (code === "Space" && !onControl && !event.repeat) {
+        if (playing) tap(keyboardHeight);
+        else if (status === "idle") session.start();
+        event.preventDefault();
+        return;
+      }
+      if (playing && !event.repeat && trading) {
+        // 掛け合いの旋律の鍵盤。押している間だけ鳴る
         if (keyboard === "easy") {
           const slot = PAD_KEY_CODES.indexOf(code as (typeof PAD_KEY_CODES)[number]);
           if (slot >= 0) {
@@ -58,10 +67,7 @@ export default function Page() {
         }
       }
       if (playing && !onControl && (code === "ArrowUp" || code === "ArrowDown")) {
-        const next = energy + (code === "ArrowUp" ? 1 : -1);
-        if (isEnergy(next)) {
-          updateSettings({ energy: next });
-        }
+        setLevel((current) => Math.min(KEYBOARD_LEVELS - 1, Math.max(0, current + (code === "ArrowUp" ? 1 : -1))));
         // 再生中はページのスクロールより演奏の操作を優先する
         event.preventDefault();
         return;
@@ -87,7 +93,7 @@ export default function Page() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [candidates, choose, energy, keyboard, noteOff, noteOn, padOff, padOn, playing, releaseChord, tap, updateSettings]);
+  }, [candidates, choose, keyboard, keyboardHeight, noteOff, noteOn, padOff, padOn, playing, releaseChord, session, status, tap, trading]);
 
   const preparing = playing && session.readyMs === null;
 
@@ -97,18 +103,17 @@ export default function Page() {
       <main className="shell">
         <header className="top">
           <h1 className="brand">Jev Session</h1>
-          <dl className="meters">
-            <div className="meter">
-              <dt>接続先</dt>
-              <dd>{session.clientName === null ? "—" : session.clientName === "jev" ? "Jev" : "ダミー（キー未設定）"}</dd>
+          {playing && (
+            <div className="top-now">
+              <span className="top-chord" aria-label={`いまのコード ${session.chord ?? "なし"}`}>
+                {session.chord ?? "—"}
+              </span>
+              <button type="button" className="transport" data-playing="true" onClick={session.stop}>
+                <span className="transport-icon" aria-hidden="true" />
+                停止
+              </button>
             </div>
-            <div className="meter">
-              <dt>次のソロの準備</dt>
-              <dd data-busy={preparing}>
-                {!playing ? "—" : session.readyMs === null ? "依頼中…" : `完了（${Math.round(session.readyMs)}ms）`}
-              </dd>
-            </div>
-          </dl>
+          )}
         </header>
 
         {session.error && (
@@ -120,46 +125,38 @@ export default function Page() {
           </p>
         )}
 
-        <section className="stage" aria-label="コードの進行">
-          {playing ? (
-            <div className="stage-chords">
-              <div className="stage-now">
-                <span className="stage-label">いま</span>
-                <span className="now-chord" aria-label={`現在のコード ${session.chord ?? "なし"}`}>
-                  {session.chord ?? "—"}
-                </span>
-              </div>
-              <div className="stage-next">
-                <span className="stage-label">つぎ</span>
-                <span className="next-chord">{nextChord ?? "—"}</span>
-                {nextChord && (
-                  <span className="next-how" data-chosen={session.chosenByUser}>
-                    {session.chosenByUser ? "✓ あなたが選びました" : "選ばなければ自動でここへ"}
-                  </span>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="stage-lead">
-              コードを選ぶ。
-              <br />
-              Jevがソロで応える。
-            </p>
-          )}
-          <button
-            type="button"
-            className="transport"
-            data-playing={playing}
-            onClick={playing ? session.stop : session.start}
-            disabled={status === "starting"}
-          >
-            <span className="transport-icon" aria-hidden="true" />
-            {status === "starting" ? "準備中…" : playing ? "停止" : "開始"}
-          </button>
-        </section>
-
         <PianoRoll subscribe={session.subscribe} playing={playing} />
 
+        <TapStage
+          status={status}
+          energy={session.liveEnergy}
+          keyboardHeight={keyboardHeight}
+          onStart={session.start}
+          onTap={tap}
+        />
+
+        {/* 遊ぶのに要らないものは、ここにしまっておく。勉強会では開いて、Jevが何を選んだかを見せる */}
+        <details className="backstage">
+          <summary>裏側を見る</summary>
+          <dl className="meters">
+            <div className="meter">
+              <dt>接続先</dt>
+              <dd>{session.clientName === null ? "—" : session.clientName === "jev" ? "Jev" : "ダミー"}</dd>
+            </div>
+            <div className="meter">
+              <dt>次のソロの準備</dt>
+              <dd data-busy={preparing}>
+                {!playing ? "—" : session.readyMs === null ? "依頼中…" : `完了（${Math.round(session.readyMs)}ms）`}
+              </dd>
+            </div>
+            <div className="meter">
+              <dt>次のコード</dt>
+              <dd>{nextChord ?? "—"}</dd>
+            </div>
+          </dl>
+          <BarLogPanel log={session.log} />
+          <ControlDock settings={session.settings} updateSettings={session.updateSettings} />
+        {trading && (
         <section className="melody" aria-labelledby="melody-heading">
           <div className="melody-head">
             <h2 id="melody-heading" className="jam-heading">
@@ -204,6 +201,7 @@ export default function Page() {
             <p className="hint">上の鍵盤の、鍵に書いてあるキーで12音すべてを弾けます。コードに合わない音も、そのまま鳴ります。</p>
           )}
         </section>
+        )}
 
         <section className="chooser" aria-labelledby="chooser-heading">
           <h2 id="chooser-heading" className="visually-hidden">
@@ -258,14 +256,7 @@ export default function Page() {
           </div>
         </section>
 
-        <JamPad playing={playing} touch={session.touch} onTap={tap} />
-        <EnergyDial
-          energy={session.settings.energy}
-          live={session.liveEnergy}
-          onChange={(energy) => session.updateSettings({ energy })}
-        />
-        <ControlDock settings={session.settings} updateSettings={session.updateSettings} />
-        <BarLogPanel log={session.log} />
+        </details>
       </main>
     </>
   );
