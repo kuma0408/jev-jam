@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { KNOWN_CHORDS } from "./candidates.ts";
 import { PROGRESSIONS } from "./library.ts";
 import {
   HOME_PROGRESSIONS,
   SECTION_BARS,
   START_PROGRESSION,
+  isSectionEnd,
   isSectionStart,
+  leadInFor,
   progressionById,
   sectionBias,
   sectionOptions,
@@ -28,14 +31,32 @@ describe("移り先にできる進行", () => {
     }
   });
 
-  it("区切りの次の小節で進めるコードから始まる進行だけを、移り先にする。いまの進行は外す", () => {
-    const names = sectionOptions(["Fmaj7", "Dm7", "Cmaj7"], "王道進行").map((progression) => progression.name);
+  it("いまの進行を除く、すべての繰り返し型の進行へ移れる", () => {
+    const names = sectionOptions("王道進行").map((progression) => progression.name);
     expect(names).toContain("Just the Two of Us進行");
     expect(names).toContain("循環（I-VI-II-V）");
-    // 王道進行は Fmaj7 から始まるが、いまの進行なので外す
+    expect(names).toContain("小室進行");
     expect(names).not.toContain("王道進行");
-    // 小室進行は Am7 から始まるので、進めない
-    expect(names).not.toContain("小室進行");
+  });
+
+  it("移る前の小節には、移り先の最初のコードへ導くセブンス（5度上のコード）を置く", () => {
+    expect(leadInFor(progressionById("i-vi-ii-v")!)).toBe("G7");
+    expect(leadInFor(progressionById("komuro")!)).toBe("E7");
+    expect(leadInFor(progressionById("marusa")!)).toBe("C7");
+    for (const progression of PROGRESSIONS.filter((item) => item.id)) {
+      expect(KNOWN_CHORDS).toContain(leadInFor(progression));
+    }
+  });
+
+  it("区切りの最後の小節（8小節目、16小節目…）が分かる", () => {
+    expect([7, 8, 9, 16].map(isSectionEnd)).toEqual([false, true, false, true]);
+  });
+
+  it("ジャズ寄りの繰り返し型の進行がある", () => {
+    for (const id of ["stepwise-descent", "minor-iv", "ii-v-i-vi7"]) expect(progressionById(id)).toBeDefined();
+    expect(progressionById("stepwise-descent")!.chords).toEqual(["Fmaj7", "Em7", "Dm7", "Cmaj7"]);
+    expect(progressionById("minor-iv")!.chords).toEqual(["Fmaj7", "Fm7", "Em7", "Am7"]);
+    expect(progressionById("ii-v-i-vi7")!.chords).toEqual(["Dm7", "G7", "Cmaj7", "A7"]);
   });
 });
 
