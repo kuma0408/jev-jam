@@ -1437,48 +1437,32 @@ th {
   margin: 10px 4px 0;
 }
 
-.score-legend {
+/* 表示のお試しの切り替え。決まったら消す */
+.style-trial {
   display: flex;
-  gap: 16px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.8125rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 18px;
+  margin: 12px 0 0;
+  padding: 8px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  font-size: 0.875rem;
+}
+
+.style-trial legend {
+  padding: 0 6px;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
-.score-legend li {
+.style-trial-option {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-/* 凡例の音符。色だけでなく、Jevの音符には棒を付けて形でも見分ける（五線譜の描き方と同じ） */
-.score-swatch {
-  position: relative;
-  width: 12px;
-  height: 9px;
-  border-radius: 50%;
-  rotate: -20deg;
-}
-
-.score-swatch[data-by="you"] {
-  background: var(--blue);
-}
-
-.score-swatch[data-by="jev"] {
-  background: var(--ink);
-}
-
-.score-swatch[data-by="jev"]::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 4px;
-  width: 1.5px;
-  height: 16px;
-  background: var(--ink);
-  rotate: 20deg;
+  min-height: 32px;
+  cursor: pointer;
 }
 
 .score-status {

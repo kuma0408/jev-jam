@@ -6,6 +6,7 @@ import { ControlDock } from "./components/control-dock.tsx";
 import { MelodyPads, PAD_KEY_CODES } from "./components/melody-pads.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
 import { Score, TAP_STEP_HIGH, TAP_STEP_LOW } from "./components/score.tsx";
+import { SCORE_STYLES, SCORE_STYLE_IDS, type ScoreStyleId } from "./components/score-styles.ts";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { TurnBanner } from "./components/turn-banner.tsx";
@@ -16,11 +17,13 @@ export default function Page() {
   const { status, candidates, nextChord, choose } = session;
   const playing = status === "playing";
 
-  const { tap, noteOn, noteOff, padOn, padOff, releaseChord } = session;
+  const { strike, lift, noteOn, noteOff, padOn, padOff, releaseChord } = session;
   // 旋律を弾く鍵盤。easy は合う音だけの8鍵、piano は12音すべて
   const [keyboard, setKeyboard] = useState<"easy" | "piano">("easy");
   // キーボードで叩くときの五線の位置（上下キーで動かす）。最初は五線の真ん中のシ
   const [keyboardStep, setKeyboardStep] = useState(6);
+  // 演奏の流れの描き方。見比べて決めるためのお試し（決まったら選ばれたもの以外は消す）
+  const [scoreStyle, setScoreStyle] = useState<ScoreStyleId>("ribbon");
   // 旋律の鍵盤は、掛け合いをするときだけキーで弾ける（普段はキーを叩いても何も起きない）
   const trading = session.settings.trade;
 
@@ -34,11 +37,11 @@ export default function Page() {
       const { code } = event;
       // ボタンやつまみにフォーカスがあるときのスペースと上下キーは、その部品の操作として扱う
       // 叩く面そのものはボタンだが、スペースは叩く操作として扱う
-      const onSurface = event.target instanceof HTMLElement && event.target.classList.contains("tap-surface");
+      const onSurface = event.target instanceof HTMLElement && event.target.classList.contains("score-surface");
       const onControl =
         !onSurface && (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement);
       if (code === "Space" && !onControl && !event.repeat) {
-        if (playing) tap(keyboardStep);
+        if (playing) strike(keyboardStep);
         else if (status === "idle") session.start();
         event.preventDefault();
         return;
@@ -75,6 +78,8 @@ export default function Page() {
     };
     // キーを離したら、押さえていたコードや音を止める
     const onKeyUp = (event: KeyboardEvent) => {
+      // スペースを離したら、押さえていた和音を止める
+      if (event.code === "Space") lift();
       if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) releaseChord();
       const pitchClass = NOTE_KEY_CODES.indexOf(event.code as (typeof NOTE_KEY_CODES)[number]);
       if (pitchClass >= 0) noteOff(pitchClass);
@@ -82,13 +87,17 @@ export default function Page() {
       const slot = PAD_KEY_CODES.indexOf(event.code as (typeof PAD_KEY_CODES)[number]);
       if (slot >= 0) padOff(slot);
     };
+    // ほかの窓へ移ると、キーや指を離したことが届かないので、押さえている和音を止める
+    const onBlur = () => lift();
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
     };
-  }, [candidates, choose, keyboard, keyboardStep, noteOff, noteOn, padOff, padOn, playing, releaseChord, session, status, tap, trading]);
+  }, [candidates, choose, keyboard, keyboardStep, noteOff, noteOn, padOff, padOn, playing, releaseChord, session, status, strike, lift, trading]);
 
   const preparing = playing && session.readyMs === null;
 
@@ -120,12 +129,28 @@ export default function Page() {
         <Score
           subscribe={session.subscribe}
           status={status}
-          bpm={session.settings.bpm}
           energy={session.liveEnergy}
+          styleId={scoreStyle}
           keyboardStep={keyboardStep}
           onStart={session.start}
-          onTap={tap}
+          onPress={strike}
+          onRelease={lift}
         />
+        <fieldset className="style-trial">
+          <legend>表示（お試し）</legend>
+          {SCORE_STYLE_IDS.map((id) => (
+            <label key={id} className="style-trial-option">
+              <input
+                type="radio"
+                name="score-style"
+                value={id}
+                checked={scoreStyle === id}
+                onChange={() => setScoreStyle(id)}
+              />
+              {SCORE_STYLES[id].label}
+            </label>
+          ))}
+        </fieldset>
 
         {/* 遊ぶのに要らないものは、ここにしまっておく。勉強会では開いて、Jevが何を選んだかを見せる */}
         <details className="backstage">

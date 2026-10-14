@@ -71,8 +71,13 @@ export type SessionEvent =
   | { kind: "beat"; beat: number }
   /** ソロの1音。velocity は強さ（0〜1） */
   | { kind: "note"; pitch: number; velocity: number; durationSeconds: number }
-  /** ユーザーが自分で鳴らした音（MIDIノート番号） */
-  | { kind: "jam"; pitches: number[] };
+  /**
+   * ユーザーが自分で鳴らした音（MIDIノート番号）。
+   * held が true なら、離すまで鳴り続ける音。離したときに lift が届く
+   */
+  | { kind: "jam"; pitches: number[]; held?: boolean }
+  /** 押さえていた音を離した */
+  | { kind: "lift" };
 
 export type BarLog = {
   bar: number;
@@ -119,10 +124,13 @@ export type Session = {
   subscribe: (listener: (event: SessionEvent) => void) => () => void;
   /** いまのコードを、押した瞬間に鳴らす（伴奏を自分で刻む）。刻んでいる間、自動の伴奏は黙る */
   /**
-   * いまのコードを、押した瞬間に鳴らす。step は五線の上で叩いた位置（真ん中のドを0とした線と間の段）。
-   * その位置の合う音をいちばん上にした和音が鳴る。省けば基本の押さえ方で鳴る
+   * いまのコードを、押した瞬間に鳴らす。lift を呼ぶまで鳴り続ける。
+   * step は五線の上で押した位置（真ん中のドを0とした線と間の段）。その位置の合う音をいちばん上にした和音が鳴る。
+   * 省けば基本の押さえ方で鳴る
    */
-  tap: (step?: number) => void;
+  strike: (step?: number) => void;
+  /** strike で押さえた和音を止める。指やキーを離したときに呼ぶ */
+  lift: () => void;
   /**
    * 鍵盤の音を1つ鳴らす。pitchClass は 0=C … 11=B。いつでも、どの音でも、押した音がそのまま鳴る。
    * noteOff を呼ぶまで鳴り続ける
@@ -229,6 +237,8 @@ type Engine = {
   pendingSwitch: string | null;
   /** ユーザーが押さえているコードの音（周波数）。離したときに止める */
   pressed: number[] | null;
+  /** 五線を押さえて鳴らしている和音（周波数）。離したときに止める */
+  struck: number[] | null;
   /** 次の小節を依頼するときに渡す、直前の小節の記録 */
   previous: { pitch: number; memo: SoloMemo };
   /** 次の小節のために最後に出した依頼。設定が変わったときに出し直す */
@@ -819,6 +829,7 @@ export function useSession(): Session {
         beatCount: 0,
         pendingSwitch: null,
         pressed: null,
+        struck: null,
         previous: { pitch: SOLO_START_PITCH, memo: {} },
         taps: [],
         lastCompTapBar: -1,
@@ -919,23 +930,34 @@ export function useSession(): Session {
     engine.callNotes.push({ pitch, beat: (performance.now() - engine.turnStartedAt) / (60_000 / bpm) });
   }, []);
 
-  const tap = useCallback((step?: number) => {
+  const lift = useCallback(() => {
     const engine = engineRef.current;
-    const current = engine?.history.at(-1);
-    if (!engine || current === undefined) return;
-    const { tone } = engine;
-    // 叩いた位置の音をいちばん上にした和音。位置を変えるたびに、同じコードでも違う響きになる
-    const voicing = step === undefined ? compVoicing(current) : voicingUnder(pitchAtStep(step, current), current);
-    emit({ kind: "jam", pitches: voicing });
-    engine.jam.triggerAttackRelease(
-      voicing.map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
-      0.4,
-      tone.immediate(),
-      0.9,
-    );
-    engine.lastCompTapBar = engine.bar;
-    recordTap(engine);
-  }, [emit, recordTap]);
+    if (!engine?.struck) return;
+    engine.jam.triggerRelease(engine.struck, engine.tone.immediate());
+    engine.struck = null;
+    emit({ kind: "lift" });
+  }, [emit]);
+
+  const strike = useCallback(
+    (step?: number) => {
+      const engine = engineRef.current;
+      const current = engine?.history.at(-1);
+      if (!engine || current === undefined) return;
+      const { tone } = engine;
+      // 前に押さえていた和音は止める（同時に押さえられるのは1つ）
+      lift();
+      // 押した位置の音をいちばん上にした和音。位置を変えるたびに、同じコードでも違う響きになる
+      const voicing = step === undefined ? compVoicing(current) : voicingUnder(pitchAtStep(step, current), current);
+      const frequencies = voicing.map((pitch) => tone.Frequency(pitch, "midi").toFrequency());
+      // 離すまで伸ばす
+      engine.jam.triggerAttack(frequencies, tone.immediate(), 0.9);
+      engine.struck = frequencies;
+      emit({ kind: "jam", pitches: voicing, held: true });
+      engine.lastCompTapBar = engine.bar;
+      recordTap(engine);
+    },
+    [emit, lift, recordTap],
+  );
 
   const noteOn = useCallback(
     (pitchClass: number) => {
@@ -1033,7 +1055,8 @@ export function useSession(): Session {
       error,
       log,
       subscribe,
-      tap,
+      strike,
+      lift,
       noteOn,
       noteOff,
       padOn,
@@ -1059,7 +1082,8 @@ export function useSession(): Session {
       error,
       log,
       subscribe,
-      tap,
+      strike,
+      lift,
       noteOn,
       noteOff,
       padOn,

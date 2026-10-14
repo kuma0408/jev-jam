@@ -275,6 +275,9 @@ export function ParticleField({ subscribe, energy: level }: { subscribe: Session
         return;
       }
 
+      // 押さえていた音を離したときは、何もしない
+      if (event.kind === "lift") return;
+
       // ソロの音: 音名を時計の文字盤のように向きへ割り当て、その向きの粒を押し出す
       const angle = ((event.pitch % 12) / 12) * Math.PI * 2 - Math.PI / 2;
       if (ripples.length >= MAX_RIPPLES) ripples.shift();
