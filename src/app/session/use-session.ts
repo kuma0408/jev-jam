@@ -183,6 +183,8 @@ export type Session = {
  */
 type BarPlan = {
   bar: number;
+  /** 吹き方の指定。伴奏がしっとりしていれば { mood: "sustained" }。小節の途中でコードが変わったときも同じ吹き方にする */
+  mood: { mood?: "sustained" };
   /** いま鳴っているコード。小節の途中で変わりうる */
   chord: string;
   band: BandEvent[];
@@ -644,7 +646,7 @@ export function useSession(): Session {
       const beat = tone.Time("4n").toSeconds();
       const ratio = swingRatioFor(settingsRef.current.bpm);
       const place = (beats: number, swing: boolean) => time + (swing ? swingBeats(beats, ratio) : beats) * beat;
-      const { energy } = countTaps(engine);
+      const { energy, touch } = countTaps(engine);
       const seeds = Array.from({ length: 8 }, () => Math.random());
 
       // 前の小節から鳴り続けている音を、この小節の入り方に合わせて処理する
@@ -671,7 +673,9 @@ export function useSession(): Session {
 
       // 1音ごとの吹き方（しゃくり、音量の動き、ビブラート、フォール）をルールで決める
       const notes = solo?.notes ?? [];
-      const expressions = planExpression(notes, { secondsPerBeat: beat });
+      // 伴奏がしっとりしていれば、ビブラートを多く深くかける
+      const mood = touch === "sustained" ? ({ mood: "sustained" } as const) : {};
+      const expressions = planExpression(notes, { secondsPerBeat: beat, ...mood });
       if (slurred && expressions[0]) {
         // 前の音からなめらかにつなぐので、しゃくらず、やわらかく立ち上げる
         expressions[0] = { ...expressions[0], scoopSemitones: 0, scoopSeconds: 0, attackSeconds: 0.035 };
@@ -702,6 +706,7 @@ export function useSession(): Session {
         energy,
         voice: settingsRef.current.voice,
         userComping: engine.lastCompTapBar >= bar - 1,
+        mood,
         tied,
       };
 
@@ -781,7 +786,7 @@ export function useSession(): Session {
       if (plan.solo?.plan) {
         const beat = engine.tone.Time("4n").toSeconds();
         plan.notes = renderCells(plan.solo.plan.cells, target, plan.solo.plan.render);
-        plan.expressions = planExpression(plan.notes, { secondsPerBeat: beat });
+        plan.expressions = planExpression(plan.notes, { secondsPerBeat: beat, ...plan.mood });
       }
       // 伸ばしている音が新しいコードに合わなければ、すぐ引っ込める
       if (engine.held && !fitsChord(engine.heldPitch, target)) {

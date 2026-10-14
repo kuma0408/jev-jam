@@ -3,7 +3,7 @@ import { sampleFromDistribution } from "../music/sample.ts";
 import { aimPitch, fitsChord } from "./aim.ts";
 import type { SectionQuestion, SoloBar, SoloMemo, Trade } from "./api.ts";
 import { REPLIES, type ReplyId, describeCall, replyEnergy } from "./call.ts";
-import { touchRegister, touchVelocity } from "./touch-style.ts";
+import { touchRange, touchRegister, touchVelocity } from "./touch-style.ts";
 import type { Cell } from "./cells.ts";
 import { CONTOURS, type Contour, biasByDirection, contourById, favorLeaps } from "./contours.ts";
 import { ENERGY, type Energy, TOUCH_CUE, type Touch } from "./energy.ts";
@@ -583,7 +583,8 @@ export async function generatePhraseBars(
     const targetPitch = touchRegister(touch, input.range) ?? registerTarget(arcId, barInPhrase, input.range);
     const render = {
       previousPitch: heldPitch(chord),
-      ...input.range,
+      // 伴奏が激しければ高い音域だけ、しっとりなら低めの音域で吹く
+      ...touchRange(touch, input.range),
       dynamics,
       shape,
       ...(targetPitch === undefined ? {} : { targetPitch }),
