@@ -3,6 +3,7 @@ import type { ChoiceAnswer, DecisionClient } from "../jev/client.ts";
 import { contourById } from "./contours.ts";
 import { biasByEnergy, generatePhraseBars, penalizeRecent, spaceBias } from "./generate-phrases.ts";
 import { renderCells } from "./render-cells.ts";
+import { touchRange } from "./touch-style.ts";
 import { RHYTHMS, rhythmById } from "./rhythms.ts";
 
 /** 質問ごとに決めた選択肢へ確率1を返し、呼び出しを記録するクライアント */
@@ -761,6 +762,11 @@ describe("generatePhraseBars（伴奏の質感で、音の大きさと音域を�
     const loud = await play("busy");
     expect(average(loud.notes.map((note) => note.velocity))).toBeGreaterThan(average(quiet.notes.map((note) => note.velocity)) * 1.4);
     expect(average(loud.notes.map((note) => note.pitch))).toBeGreaterThan(average(quiet.notes.map((note) => note.pitch)) + 4);
+  });
+
+  it("激しいときは、高い音域の中だけで吹く", async () => {
+    const loud = await play("busy");
+    for (const note of loud.notes) expect(note.pitch).toBeGreaterThanOrEqual(touchRange("busy", input.range).low);
   });
 
   it("別のコードへ乗せ直しても、音の大きさの倍率は保たれる", async () => {

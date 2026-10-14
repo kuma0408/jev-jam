@@ -14,6 +14,8 @@ export type NoteExpression = {
   shape: Shape;
   /** 音の後半にビブラートをかけるか */
   vibrato: boolean;
+  /** ビブラートの深さの倍率。省略時は1。伴奏がしっとりしているときは深くする */
+  vibratoDepth?: number;
   /** 音の終わりで音程を落として消えるか（フォール） */
   fall: boolean;
   /** 音の立ち上がりにかける秒数。長いほどやわらかく、前の音となめらかにつながる */
@@ -23,7 +25,14 @@ export type NoteExpression = {
 export type ExpressionOptions = {
   /** いまのテンポでの1拍の秒数 */
   secondsPerBeat: number;
+  /** 伴奏の様子。sustained（しっとり）なら、ビブラートを多く深くかける */
+  mood?: "sustained";
 };
+
+/** 伴奏がしっとりしているときに、ビブラートをかける音の長さの下限（秒）。ふだんより短い音にもかける */
+const SUSTAINED_VIBRATO_MIN_SECONDS = 0.35;
+/** 伴奏がしっとりしているときの、ビブラートの深さの倍率 */
+const SUSTAINED_VIBRATO_DEPTH = 1.5;
 
 /** 候補になった音のうち、実際にしゃくる割合。毎回かかると機械的に聞こえる */
 const SCOOP_CHANCE = 0.6;
@@ -94,7 +103,8 @@ export function planExpression(
       scoopSemitones: scoop ? SCOOP_SEMITONES : 0,
       scoopSeconds: scoop ? Math.min(SCOOP_MAX_SECONDS, seconds / 2) : 0,
       shape: seconds >= SHAPE_MIN_SECONDS ? pickShape(random()) : "flat",
-      vibrato: seconds >= VIBRATO_MIN_SECONDS,
+      vibrato: seconds >= (options.mood === "sustained" ? SUSTAINED_VIBRATO_MIN_SECONDS : VIBRATO_MIN_SECONDS),
+      ...(options.mood === "sustained" ? { vibratoDepth: SUSTAINED_VIBRATO_DEPTH } : {}),
       fall,
       attackSeconds: slurred ? SLURRED_ATTACK : TONGUED_ATTACK,
     };
@@ -176,6 +186,7 @@ export function renderExpression(expression: NoteExpression, seconds: number): {
       const since = time - vibratoFrom;
       const depth =
         VIBRATO_DEPTH_SEMITONES *
+        (expression.vibratoDepth ?? 1) *
         Math.min(1, since / VIBRATO_FADE_IN_SECONDS) *
         Math.min(1, (seconds - time) / VIBRATO_FADE_OUT_SECONDS);
       offset = depth * Math.sin(2 * Math.PI * VIBRATO_RATE_HZ * since);

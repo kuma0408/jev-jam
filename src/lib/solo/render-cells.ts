@@ -24,6 +24,8 @@ export type RenderOptions = {
    * 鳴っている音がこのコードに合わないときに使う。省略時は true
    */
   allowTie?: boolean;
+  /** 音の大きさの倍率。伴奏の質感で、しっとりなら小さく、激しいほど大きくする。省略時は1 */
+  velocityScale?: number;
 };
 
 const BEATS_PER_CELL = 2;
@@ -111,7 +113,8 @@ function velocityOf(note: CellNote, startBeats: number, options: RenderOptions):
   const fraction = note.at - Math.floor(note.at);
   const metric = fraction === 0 ? ONBEAT_FACTOR : fraction === 0.5 ? OFFBEAT_FACTOR : 1;
   const accent = note.accent === "ghost" ? GHOST_FACTOR : note.accent === "accent" ? ACCENT_FACTOR : 1;
-  return Math.min(1, Math.max(MIN_VELOCITY, BASE_VELOCITY[options.dynamics] * shape * metric * accent));
+  const scale = options.velocityScale ?? 1;
+  return Math.min(1, Math.max(MIN_VELOCITY, BASE_VELOCITY[options.dynamics] * shape * metric * accent * scale));
 }
 
 /**

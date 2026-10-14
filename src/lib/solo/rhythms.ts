@@ -499,8 +499,11 @@ export function holdBackTies(probabilities: Record<string, number>): Record<stri
   );
 }
 
-/** 伴奏がしっとりしているとき、16分音符を含むリズムに掛ける倍率 */
-const SETTLE_SIXTEENTH_FACTOR = 0.15;
+/**
+ * 伴奏がしっとりしているとき、16分音符を含むリズムに掛ける倍率。
+ * 最初は 0.15 でほぼ出なかったが、「しっとりでもときどき16分で流してほしい」と言われて上げた
+ */
+const SETTLE_SIXTEENTH_FACTOR = 0.35;
 /** 伴奏がしっとりしているとき、1拍以上伸ばす音を含むリズムに掛ける倍率 */
 const SETTLE_LONG_FACTOR = 2.5;
 
