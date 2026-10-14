@@ -4,13 +4,13 @@ import { FLOURISHES, flourishOnRelease, flourishScale, pickFlourish } from "./fl
 describe("pickFlourish（押したときのエフェクトを選ぶ）", () => {
   it("5回続けて押すと、5種類すべてが1回ずつ出る（同じものが続かない）", () => {
     expect(FLOURISHES).toEqual(["ring", "cut-in", "sweep", "confetti", "spinner"]);
-    const kinds = [0, 1, 2, 3, 4].map((count) => pickFlourish(count, () => 0.3));
+    const kinds = [0, 1, 2, 3, 4].map((count) => pickFlourish(count));
     expect(new Set(kinds).size).toBe(5);
   });
 
   it("並び順は周ごとに入れ替わる（いつも同じ順番にならない）", () => {
-    const first = [0, 1, 2, 3, 4].map((count) => pickFlourish(count, () => 0.1));
-    const second = [5, 6, 7, 8, 9].map((count) => pickFlourish(count, () => 0.9));
+    const first = [0, 1, 2, 3, 4].map((count) => pickFlourish(count));
+    const second = [5, 6, 7, 8, 9].map((count) => pickFlourish(count));
     expect(second).not.toEqual(first);
     expect(new Set(second).size).toBe(5);
   });
