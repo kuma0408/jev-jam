@@ -1,6 +1,6 @@
 // 録音音源を、1音ごとに音程と音量を動かしながら鳴らす音源。
 // Tone.js の Sampler は鳴らし始めた音の音程を動かせないので、ソロ用に自前で持つ。
-import { type NoteExpression, renderExpression } from "../../lib/solo/expression.ts";
+import { type NoteExpression, breathCurve, renderExpression } from "../../lib/solo/expression.ts";
 
 type Tone = typeof import("tone");
 
@@ -49,16 +49,34 @@ function semitoneRatio(semitones: number): number {
   return 2 ** (semitones / 12);
 }
 
+/** 息の音を通すフィルターの中心を、音の高さの何倍にするか。倍音のあたりのかすれを残す */
+const BREATH_FREQUENCY_RATIO = 3;
+const BREATH_FREQUENCY_MIN = 700;
+const BREATH_FREQUENCY_MAX = 6000;
+/** 息の音を通す幅（フィルターの Q）。小さいほど広い */
+const BREATH_Q = 0.9;
+
+export type BreathOptions = {
+  /** 楽器ごとの息の音の多さ（0〜1）。息を使わない楽器（エレピ）は 0 */
+  level: number;
+  /** ユーザーが設定で決める息の量（0〜1）。鳴らすたびに読む */
+  amount: () => number;
+};
+
 /**
  * @param samples 「音名 → 音源ファイル」の対応
  * @param startOffset 音源ファイルの頭にある無音の長さ（秒）。そのぶん先から再生する
+ * @param breath 音に重ねる息の音。録音音源だけでは機械っぽく聞こえるので、管楽器では息づかいを足す
  */
 export function createExpressiveVoice(
   tone: Tone,
   samples: Record<string, string>,
   output: import("tone").InputNode,
   startOffset = 0,
+  breath?: BreathOptions,
 ): ExpressiveVoice {
+  // 息の音のもと。鳴らしっぱなしのノイズを、音ごとのフィルターと音量で切り出して使う
+  const noise = breath && breath.level > 0 ? new tone.Noise("pink").start() : null;
   const pitches = Object.keys(samples).map((name) => ({ name, midi: tone.Frequency(name).toMidi() }));
   let buffers: import("tone").ToneAudioBuffers;
   const loaded = new Promise<void>((resolve, reject) => {
@@ -94,10 +112,28 @@ export function createExpressiveVoice(
         note.time,
         note.duration,
       );
+      // 息の音: 音の高さのあたりだけを通したノイズを、吹き始めは強く、その後は小さく重ねる
+      const amount = breath && noise ? breath.level * breath.amount() : 0;
+      let breathPath: { filter: import("tone").Filter; gain: import("tone").Gain } | null = null;
+      if (noise && amount > 0) {
+        const center = tone.Frequency(note.pitch, "midi").toFrequency() * BREATH_FREQUENCY_RATIO;
+        const filter = new tone.Filter({
+          type: "bandpass",
+          frequency: Math.min(BREATH_FREQUENCY_MAX, Math.max(BREATH_FREQUENCY_MIN, center)),
+          Q: BREATH_Q,
+        });
+        const breathGain = new tone.Gain(0).connect(output);
+        noise.connect(filter);
+        filter.connect(breathGain);
+        breathGain.gain.setValueCurveAtTime(breathCurve(curves.gain, note.duration, note.velocity, amount), note.time, note.duration);
+        breathPath = { filter, gain: breathGain };
+      }
+
       const naturalFade = Math.min(MAX_FADE_SECONDS, Math.max(MIN_FADE_SECONDS, note.duration * FADE_RATIO));
       const releaseAt = (time: number, fadeSeconds = naturalFade) => {
         // setTargetAtTime は時定数の3倍でほぼ0になる
         gain.gain.setTargetAtTime(0, time, fadeSeconds / 3);
+        breathPath?.gain.gain.setTargetAtTime(0, time, fadeSeconds / 3);
         source.stop(time + fadeSeconds * 2);
       };
 
@@ -105,6 +141,11 @@ export function createExpressiveVoice(
         active.delete(voice);
         source.dispose();
         gain.dispose();
+        if (breathPath && noise) {
+          noise.disconnect(breathPath.filter);
+          breathPath.filter.dispose();
+          breathPath.gain.dispose();
+        }
       };
       source.start(note.time, startOffset);
       if (note.open) {
@@ -120,6 +161,7 @@ export function createExpressiveVoice(
       }
       active.clear();
       buffers.dispose();
+      noise?.dispose();
     },
   };
 }

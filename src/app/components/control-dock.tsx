@@ -46,6 +46,21 @@ export function ControlDock({ settings, updateSettings }: Pick<Session, "setting
         />
       </label>
       <label className="field">
+        <span className="field-head">
+          <span className="field-label">息の音</span>
+          <output className="field-value">{Math.round(settings.breath * 100)}%</output>
+        </span>
+        {/* 管楽器の音に重ねる息づかい。録音だけでは機械っぽく聞こえるのを和らげる */}
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={settings.breath}
+          onChange={(event) => updateSettings({ breath: Number(event.target.value) })}
+        />
+      </label>
+      <label className="field">
         <span className="field-label">ソロの楽器</span>
         <select value={settings.voice} onChange={(event) => updateSettings({ voice: event.target.value as SoloVoice })}>
           {SOLO_VOICES.map((voice) => (

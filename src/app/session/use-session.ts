@@ -51,6 +51,8 @@ export type SessionSettings = {
   voice: SoloVoice;
   /** ソロの音量（dB） */
   soloDb: number;
+  /** 管楽器の音に重ねる息の音の量（0〜1） */
+  breath: number;
   /** 掛け合い。true なら、Jevとユーザーが2小節ずつ交代で弾く。false なら、Jevがずっとソロを取る */
   trade: boolean;
 };
@@ -329,6 +331,7 @@ export function useSession(): Session {
     soloDb: 0,
     // 掛け合いは、旋律を弾くのが未経験者には難しすぎたので既定では使わない
     trade: false,
+    breath: 0.5,
   });
   const [chord, setChord] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ChordCandidate[]>([]);
@@ -804,7 +807,13 @@ export function useSession(): Session {
           const instrument = SOLO_INSTRUMENTS[voice];
           const gain = new tone.Gain(tone.dbToGain(instrument.gainDb)).connect(soloVolume);
           soloGains.push(gain);
-          return [voice, createExpressiveVoice(tone, instrument.samples, gain, instrument.startOffset)];
+          return [
+            voice,
+            createExpressiveVoice(tone, instrument.samples, gain, instrument.startOffset, {
+              level: instrument.breath,
+              amount: () => settingsRef.current.breath,
+            }),
+          ];
         }),
       ) as Engine["solos"];
       const engine: Engine = {

@@ -188,3 +188,24 @@ export function renderExpression(expression: NoteExpression, seconds: number): {
   }
   return { pitch, gain };
 }
+
+/** 伸ばしている間の息の音の大きさ（音の大きさに対する割合） */
+const BREATH_LEVEL = 0.06;
+/** 吹き始めのかすれの大きさ */
+const CHIFF_LEVEL = 0.3;
+/** 吹き始めのかすれが消えていく速さ（時定数、秒） */
+const CHIFF_SECONDS = 0.03;
+
+/**
+ * 音に重ねる息の音（ノイズ）の大きさの曲線。録音音源だけでは機械っぽく聞こえるので、生の管楽器らしい息づかいを足す。
+ * 吹き始めに短く強いかすれを入れ、その後は音の大きさの動き（gain）に沿って小さな息の音を残す。
+ *
+ * @param gain renderExpression が返す、音の大きさの曲線
+ * @param amount 息の量（0〜1）。0 なら鳴らさない
+ */
+export function breathCurve(gain: readonly number[], seconds: number, velocity: number, amount: number): number[] {
+  return gain.map((level, index) => {
+    const time = (index / Math.max(1, gain.length - 1)) * seconds;
+    return amount * velocity * (level * BREATH_LEVEL + CHIFF_LEVEL * Math.exp(-time / CHIFF_SECONDS));
+  });
+}
