@@ -3,6 +3,7 @@ import {
   RHYTHMS,
   TIE_RHYTHMS,
   boostSixteenths,
+  settleDown,
   favorDownbeat,
   holdBackLongNotes,
   holdBackTies,
@@ -267,5 +268,27 @@ describe("holdBackTies（持ち越しを選ばれにくくする）", () => {
 
   it("確率を0にはしない（持ち越しは残す）", () => {
     expect(holdBackTies({ "r-tie-short": 0.1 })["r-tie-short"]).toBeGreaterThan(0);
+  });
+});
+
+describe("settleDown（伴奏がしっとりしているとき、ソロを落ち着かせる）", () => {
+  const ids = RHYTHMS.map((rhythm) => rhythm.id);
+  const even = Object.fromEntries(ids.map((id) => [id, 1]));
+  const settled = settleDown(even);
+  const sixteenthIds = RHYTHMS.filter((rhythm) => rhythm.run || rhythm.sixteenths).map((rhythm) => rhythm.id);
+  const longIds = RHYTHMS.filter((rhythm) => rhythm.hits.some((hit) => hit.dur >= 1)).map((rhythm) => rhythm.id);
+
+  it("16分音符を含むリズムを選ばれにくくする", () => {
+    expect(sixteenthIds.length).toBeGreaterThan(0);
+    for (const id of sixteenthIds) expect(settled[id]!).toBeLessThan(0.5);
+  });
+
+  it("1拍以上伸ばす音を含むリズムを選ばれやすくする", () => {
+    expect(longIds.length).toBeGreaterThan(0);
+    for (const id of longIds.filter((id) => !sixteenthIds.includes(id))) expect(settled[id]!).toBeGreaterThan(1);
+  });
+
+  it("一覧に無いIDは、そのまま返す", () => {
+    expect(settleDown({ unknown: 0.3 })).toEqual({ unknown: 0.3 });
   });
 });
