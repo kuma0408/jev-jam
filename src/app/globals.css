@@ -56,7 +56,7 @@ input {
 }
 
 /* 背景の粒子。操作の邪魔をしないよう、最背面に固定する */
-.particle-field {
+.backdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
