@@ -61,3 +61,31 @@ describe("voicingUnder（叩いた音をいちばん上にした和音）", () =
     }
   });
 });
+
+describe("voicingUnder（低い位置を押したとき）", () => {
+  it.each(KNOWN_CHORDS)("%s: 低いところでは下に重ねる音を2つに減らし、低い音どうしを2半音以内に詰めない", (chord) => {
+    const tones = chordTones(chord).map(pitchClassOf);
+    for (const top of [48, 50, 52, 53]) {
+      const voicing = voicingUnder(top, chord);
+      expect(voicing).toHaveLength(3);
+      expect(voicing.at(-1)).toBe(top);
+      for (const pitch of voicing.slice(0, -1)) expect(tones).toContain(pitch % 12);
+      for (let index = 1; index < voicing.length; index++) {
+        // 低い音（E3 より下）が混ざる間隔は、3半音以上空ける
+        if (voicing[index - 1]! < 52) expect(voicing[index]! - voicing[index - 1]!).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("C3 を押すと、その下に2つの音を重ねる", () => {
+    // C の下の B は半音でぶつかるので飛ばし、G と E を重ねる
+    expect(voicingUnder(48, "Cmaj7")).toEqual([40, 43, 48]);
+  });
+});
+
+describe("pitchAtStep（真ん中のドより下）", () => {
+  it("1オクターブ下のド（C3）の位置も、合う音にする", () => {
+    expect(pitchAtStep(-7, "Cmaj7")).toBe(48);
+    expect(pitchAtStep(-5, "Cmaj7")).toBe(52);
+  });
+});
