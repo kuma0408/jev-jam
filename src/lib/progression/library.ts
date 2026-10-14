@@ -61,7 +61,27 @@ export const PROGRESSIONS: readonly Progression[] = [
   { name: "枯葉風", chords: ["Dm7", "G7", "Cmaj7", "Fmaj7", "E7", "Am7"] },
   { name: "bVI-bVII-I", chords: ["Abmaj7", "Bb7", "Cmaj7"] },
   { name: "ドミナントからbVIへ", chords: ["Dm7", "G7", "Abmaj7", "Bb7", "Cmaj7"] },
-  { name: "順次下降", chords: ["Fmaj7", "Em7", "Dm7", "Cmaj7"] },
+  {
+    name: "順次下降",
+    chords: ["Fmaj7", "Em7", "Dm7", "Cmaj7"],
+    loop: true,
+    id: "stepwise-descent",
+    mood: "IV-iii-ii-I stepping gently down. Laid-back, lo-fi neo soul with a floating feel.",
+  },
+  {
+    name: "サブドミナントマイナー循環",
+    chords: ["Fmaj7", "Fm7", "Em7", "Am7"],
+    loop: true,
+    id: "minor-iv",
+    mood: "IV-iv-iii-vi with the borrowed minor iv. Bittersweet, soulful and nostalgic.",
+  },
+  {
+    name: "ツーファイブワン循環",
+    chords: ["Dm7", "G7", "Cmaj7", "A7"],
+    loop: true,
+    id: "ii-v-i-vi7",
+    mood: "ii-V-I with a VI7 leading back around. The essential bebop cycle, swinging and confident.",
+  },
   { name: "IVへのツーファイブ", chords: ["Gm7", "C7", "Fmaj7"] },
   { name: "I-I7-IV-IVm", chords: ["Cmaj7", "C7", "Fmaj7", "Fm7"] },
   {

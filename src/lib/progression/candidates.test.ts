@@ -149,7 +149,7 @@ describe("nextChordCandidates（1小節に2つのコードを置く）", () => {
 
   it("1小節に2つ置くのは、その形の進行の続きのときだけ。ほかの候補は1小節まるごと1つのコード", () => {
     // 循環（I-VI-II-V）の途中
-    const [first] = nextChordCandidates(["Cmaj7", "Am7"]);
+    const [first] = nextChordCandidates(["Dm7", "G7", "Cmaj7", "Am7"]);
     expect(first).toMatchObject({ chord: "Dm7" });
     expect(first!.then).toBeUndefined();
   });
@@ -161,8 +161,8 @@ describe("nextChordCandidates（乗っている進行に沿わせる）", () => 
   });
 
   it("その進行が1小節に2つ置く形なら、後半のコードも付ける", () => {
-    expect(nextChordCandidates(["Cmaj7", "Am7"])[0]!.chord).toBe("Dm7");
-    expect(nextChordCandidates(["Cmaj7", "Am7"], { prefer: "Just the Two of Us進行" })[0]).toMatchObject({
+    expect(nextChordCandidates(["Dm7", "G7", "Cmaj7", "Am7"])[0]!.chord).toBe("Dm7");
+    expect(nextChordCandidates(["Dm7", "G7", "Cmaj7", "Am7"], { prefer: "Just the Two of Us進行" })[0]).toMatchObject({
       chord: "Gm7",
       then: "C7",
     });

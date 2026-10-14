@@ -17,7 +17,9 @@ import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/
 import type { Progression } from "../../lib/progression/library.ts";
 import {
   START_PROGRESSION,
+  isSectionEnd,
   isSectionStart,
+  leadInFor,
   progressionById,
   progressionByName,
   sectionBias,
@@ -268,6 +270,8 @@ type Engine = {
   autoSplit: string | null;
   /** いま乗っている定番進行と、乗り始めた小節。自動で進むときは、この進行の続きを優先する */
   progression: { name: string; since: number } | null;
+  /** 区切りの最後の小節でJevが選んだ移り先。導くコードを鳴らした次の小節（区切りの頭）から、この進行に入る */
+  pendingMove: Progression | null;
   /** ユーザーが押さえているコードの音（周波数）。離したときに止める */
   pressed: number[] | null;
   /** 五線を押さえて鳴らしている和音（周波数）。離したときに止める */
@@ -348,22 +352,17 @@ function candidatesOf(engine: Engine, history: readonly string[] = engine.histor
   return nextChordCandidates(history, engine.progression ? { prefer: engine.progression.name } : {});
 }
 
-/**
- * 区切りの頭で、Jevが「別の進行へ移る」を選んでいたら、その進行を返す。
- * 移り先の最初のコードが、いまから進めるコードでなければ移らない（流れが不自然になるため）
- */
+/** 区切りの最後の小節で、Jevが「別の進行へ移る」を選んでいたら、その進行を返す */
 function sectionMove(engine: Engine): Progression | null {
   const choice = engine.preparedAny?.section?.choice;
   if (!choice || choice === "stay") return null;
-  const target = progressionById(choice);
-  if (!target || !candidatesOf(engine).some((candidate) => candidate.chord === target.chords[0])) return null;
-  return target;
+  return progressionById(choice) ?? null;
 }
 
 /** 区切りの前の小節で、Jevに「続けるか、どの進行へ移るか」を聞くための情報。移れる進行が無ければ聞かない */
-function sectionQuestion(engine: Engine, chords: readonly string[], target: number): SoloRequest["section"] {
+function sectionQuestion(engine: Engine, target: number): SoloRequest["section"] {
   const current = engine.progression?.name ?? null;
-  const options = sectionOptions(chords, current).map((progression) => {
+  const options = sectionOptions(current).map((progression) => {
     const bias = sectionBias(progression);
     return { id: progression.id!, mood: progression.mood!, ...(bias === 1 ? {} : { bias }) };
   });
@@ -481,8 +480,9 @@ export function useSession(): Session {
       const answering = target === 1 || turnOf(target - 1) === "you";
       const call = trading && answering ? summarizeCall(engine.callNotes) : null;
       const trade: SoloRequest["trade"] = trading ? { part: answering ? "answer" : "close", call } : undefined;
-      // 次の小節が区切りの頭なら、続けるか、どの定番進行へ移るかもJevに聞く（掛け合いの間は聞かない）
-      const section = !trading && engine.bar > 0 && isSectionStart(target) ? sectionQuestion(engine, chords, target) : undefined;
+      // 次の小節が区切りの最後の小節なら、続けるか、どの定番進行へ移るかもJevに聞く（掛け合いの間は聞かない）。
+      // 移るなら、その小節に移り先へ導くコードを置き、区切りの頭から移り先に入る
+      const section = !trading && engine.bar > 0 && isSectionEnd(target) ? sectionQuestion(engine, target) : undefined;
       return requestSolos({
         chords,
         strategy,
@@ -556,7 +556,9 @@ export function useSession(): Session {
       let movedTo: Progression | null = null;
       // 区切りの頭なら、Jevが続けるか移るかを選んだ結果を記録に出す。
       // 用意済みのソロはこの後の次の小節の依頼で入れ替わるので、先に取っておく
-      const sectionDecision = isSectionStart(bar) ? engine.preparedAny?.section : undefined;
+      const sectionDecision = isSectionEnd(bar) ? engine.preparedAny?.section : undefined;
+      /** この小節に置いた、移り先へ導くコードの行き先 */
+      let leadingTo: Progression | null = null;
       if (first) {
         current = START_CHORD;
         how = "start";
@@ -571,16 +573,22 @@ export function useSession(): Session {
         current = engine.history.at(-1)!;
         how = "chosen";
       } else {
-        // 何も弾かれなかったので、既定の候補へ自動で進む。後半に置くコードがあれば、3拍目で切り替える
-        // 区切りの頭では、Jevが選んでいれば別の定番進行へ移る
+        // 何も弾かれなかったので、既定の候補へ自動で進む。後半に置くコードがあれば、3拍目で切り替える。
+        // 区切りの最後の小節でJevが移ると選んでいたら、移り先へ導くコードを置き、区切りの頭から移り先に入る
         const [first] = candidatesOf(engine);
-        const move = isSectionStart(bar) ? sectionMove(engine) : null;
+        const move = isSectionEnd(bar) ? sectionMove(engine) : null;
         how = "auto";
         if (move) {
-          current = move.chords[0]!;
+          current = leadInFor(move);
           engine.autoSplit = null;
-          engine.progression = { name: move.name, since: bar };
-          movedTo = move;
+          engine.pendingMove = move;
+          leadingTo = move;
+        } else if (isSectionStart(bar) && engine.pendingMove) {
+          current = engine.pendingMove.chords[0]!;
+          engine.autoSplit = null;
+          engine.progression = { name: engine.pendingMove.name, since: bar };
+          movedTo = engine.pendingMove;
+          engine.pendingMove = null;
         } else {
           current = first!.chord;
           engine.autoSplit = first!.then ?? null;
@@ -590,7 +598,11 @@ export function useSession(): Session {
         }
         engine.history.push(current);
       }
-      if (how !== "auto") engine.autoSplit = null;
+      if (how !== "auto") {
+        engine.autoSplit = null;
+        // ユーザーがコードを弾いたら、移る予定は取りやめる
+        engine.pendingMove = null;
+      }
       const trading = settingsRef.current.trade;
       const who: Turn = trading ? turnOf(bar) : "jev";
       if (trading && who === "you" && turnOf(bar - 1) === "jev") {
@@ -609,7 +621,16 @@ export function useSession(): Session {
       engine.heldOver = false;
       revoiceHeld(engine, current, time);
       // 次の小節の候補。後半のコードへ切り替える予定なら、切り替えた後の流れから求める
-      const next = candidatesOf(engine, engine.autoSplit ? [...engine.history, engine.autoSplit] : engine.history);
+      const following = candidatesOf(engine, engine.autoSplit ? [...engine.history, engine.autoSplit] : engine.history);
+      // 移る予定なら、移り先の最初のコードを候補の先頭に置く（次の小節のソロも、そのコードの分を用意する）
+      const entry = engine.pendingMove?.chords[0];
+      const next: ChordCandidate[] =
+        entry === undefined
+          ? following
+          : [
+              { chord: entry, adventure: 1, reason: `「${engine.pendingMove!.name}」へ移る`, progression: engine.pendingMove!.name },
+              ...following.filter((candidate) => candidate.chord !== entry),
+            ];
 
       const beat = tone.Time("4n").toSeconds();
       const ratio = swingRatioFor(settingsRef.current.bpm);
@@ -702,7 +723,7 @@ export function useSession(): Session {
         engine.lastRequest = null;
       }
 
-      const note = sectionDecision ? describeSection(sectionDecision.odds, movedTo) : null;
+      const note = sectionDecision ? describeSection(sectionDecision.odds, leadingTo) : null;
       // 画面は、音が実際に鳴るタイミングに合わせて更新する
       draw.schedule(() => {
         if (engineRef.current !== engine) return;
@@ -772,7 +793,7 @@ export function useSession(): Session {
 
   /** 次の小節の頭で鳴っているはずのコード。ユーザーがこの小節で弾いていればそのまま、弾いていなければ既定の候補 */
   const upcomingChord = (engine: Engine, plan: BarPlan): string =>
-    engine.heldOver ? plan.chord : candidatesOf(engine)[0]!.chord;
+    engine.heldOver ? plan.chord : (engine.pendingMove?.chords[0] ?? candidatesOf(engine)[0]!.chord);
 
   /**
    * 4拍目の頭で、最後の1拍を次の小節のコードへ向かわせる。
@@ -984,6 +1005,7 @@ export function useSession(): Session {
         autoSplit: null,
         // 最初から基本の進行に乗る
         progression: { name: START_PROGRESSION.name, since: 1 },
+        pendingMove: null,
         pressed: null,
         struck: null,
         struckAt: null,
