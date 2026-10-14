@@ -18,15 +18,8 @@ import { aimPitch, fitsChord } from "../../lib/solo/aim.ts";
 import type { SoloBar, SoloMemo, SoloNote, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import { padPitches } from "../../lib/music/pads.ts";
 import { type PlayedNote, type Turn, TURN_BARS, prepareBeat, summarizeCall, turnOf } from "../../lib/solo/call.ts";
-import {
-  type Energy,
-  RESTING_ENERGY,
-  type Tap,
-  type Touch,
-  energyFromTaps,
-  tapVelocity,
-  touchOf,
-} from "../../lib/solo/energy.ts";
+import { type Energy, RESTING_ENERGY, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
+import { pitchAtStep, voicingUnder } from "../../lib/music/staff.ts";
 import { type NoteExpression, planExpression } from "../../lib/solo/expression.ts";
 import { renderCells } from "../../lib/solo/render-cells.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
@@ -64,8 +57,6 @@ export type SessionSettings = {
 
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
 const JAM_TONE_BASE = 72;
-/** 高さを指定せずに叩いたとき（鍵盤やコードの札を弾いたとき）の高さ */
-const MIDDLE_HEIGHT = 0.5;
 /** 合う音だけの鍵盤の、いちばん左の音のおおよその高さ（MIDIノート番号） */
 export const PAD_LOW = 64;
 /** 押さえている音の覚え書きで、合う音だけの鍵盤の分を12音の鍵盤と区別するための番号のずらし */
@@ -127,7 +118,11 @@ export type Session = {
   /** 音に合わせた通知を受け取る。戻り値を呼ぶと解除する */
   subscribe: (listener: (event: SessionEvent) => void) => () => void;
   /** いまのコードを、押した瞬間に鳴らす（伴奏を自分で刻む）。刻んでいる間、自動の伴奏は黙る */
-  tap: (height?: number) => void;
+  /**
+   * いまのコードを、押した瞬間に鳴らす。step は五線の上で叩いた位置（真ん中のドを0とした線と間の段）。
+   * その位置の合う音をいちばん上にした和音が鳴る。省けば基本の押さえ方で鳴る
+   */
+  tap: (step?: number) => void;
   /**
    * 鍵盤の音を1つ鳴らす。pitchClass は 0=C … 11=B。いつでも、どの音でも、押した音がそのまま鳴る。
    * noteOff を呼ぶまで鳴り続ける
@@ -204,7 +199,7 @@ type Engine = {
   /** 古い応答を捨てるための通し番号 */
   requestToken: number;
   /** ユーザーが叩いた時刻（performance.now のミリ秒）。直近1小節ぶんだけ残す */
-  taps: Tap[];
+  taps: number[];
   /** ユーザーが最後に伴奏を刻んだ小節。刻んでいる間は自動の伴奏を黙らせる */
   lastCompTapBar: number;
   /** 小節の終わりまで伸びて、まだ鳴っているソロの音。次の小節で持ち越すか切るかを決める */
@@ -332,7 +327,7 @@ export function useSession(): Session {
   const [reply, setReply] = useState<Session["reply"]>(null);
   /** ユーザーが直近1小節に叩いた回数 */
   const [tapCount, setTapCount] = useState(0);
-  /** 叩いた高さから決まる、いまの盛り上がり */
+  /** 叩いた回数から決まる、いまの盛り上がり */
   const [live, setLive] = useState<Energy>(RESTING_ENERGY);
 
   // 再生ループから最新の設定を読むためのref
@@ -343,8 +338,8 @@ export function useSession(): Session {
   const countTaps = useCallback((engine: Engine) => {
     const barMs = (60_000 / settingsRef.current.bpm) * 4;
     const since = performance.now() - barMs;
-    engine.taps = engine.taps.filter((tap) => tap.at >= since);
-    const energy = energyFromTaps(engine.taps, performance.now(), barMs);
+    engine.taps = engine.taps.filter((at) => at >= since);
+    const energy = liveEnergy(RESTING_ENERGY, engine.taps.length);
     setTapCount(engine.taps.length);
     setLive(energy);
     return energy;
@@ -873,10 +868,10 @@ export function useSession(): Session {
     }
   }, [onBeat, prepare, stop]);
 
-  /** ユーザーが叩いたことを、叩いた高さとともに記録する。盛り上がりが変わればソロの作り直しが走る */
+  /** ユーザーが叩いたことを記録する。たくさん叩くほど盛り上がり、盛り上がりが変わればソロの作り直しが走る */
   const recordTap = useCallback(
-    (engine: Engine, height: number) => {
-      engine.taps.push({ at: performance.now(), height });
+    (engine: Engine) => {
+      engine.taps.push(performance.now());
       countTaps(engine);
     },
     [countTaps],
@@ -911,8 +906,8 @@ export function useSession(): Session {
       engine.jam.triggerAttack(frequencies, tone.immediate(), 0.9);
       engine.pressed = frequencies;
       emit({ kind: "jam", pitches: voicing });
-      // コードを弾くのも、叩いたことに数える（真ん中の高さで叩いたことにする）
-      recordTap(engine, MIDDLE_HEIGHT);
+      // コードを弾くのも、叩いたことに数える
+      recordTap(engine);
     },
     [emit, recordTap, releaseChord],
   );
@@ -924,23 +919,22 @@ export function useSession(): Session {
     engine.callNotes.push({ pitch, beat: (performance.now() - engine.turnStartedAt) / (60_000 / bpm) });
   }, []);
 
-  const tap = useCallback((height = MIDDLE_HEIGHT) => {
+  const tap = useCallback((step?: number) => {
     const engine = engineRef.current;
     const current = engine?.history.at(-1);
     if (!engine || current === undefined) return;
     const { tone } = engine;
-    // いちばん上の音を1オクターブ上にも重ねて、輪郭をはっきりさせる
-    const voicing = compVoicing(current);
+    // 叩いた位置の音をいちばん上にした和音。位置を変えるたびに、同じコードでも違う響きになる
+    const voicing = step === undefined ? compVoicing(current) : voicingUnder(pitchAtStep(step, current), current);
     emit({ kind: "jam", pitches: voicing });
     engine.jam.triggerAttackRelease(
-      [...voicing, voicing.at(-1)! + 12].map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
+      voicing.map((pitch) => tone.Frequency(pitch, "midi").toFrequency()),
       0.4,
       tone.immediate(),
-      // 上の方を叩くほど強く鳴らす
-      tapVelocity(height),
+      0.9,
     );
     engine.lastCompTapBar = engine.bar;
-    recordTap(engine, height);
+    recordTap(engine);
   }, [emit, recordTap]);
 
   const noteOn = useCallback(
@@ -954,7 +948,7 @@ export function useSession(): Session {
       engine.jam.triggerAttack(frequency, tone.immediate(), 0.95);
       engine.heldNotes.set(pitchClass, frequency);
       emit({ kind: "jam", pitches: [pitch] });
-      recordTap(engine, MIDDLE_HEIGHT);
+      recordTap(engine);
       recordCall(engine, pitch);
     },
     [emit, recordCall, recordTap],
@@ -981,7 +975,7 @@ export function useSession(): Session {
       engine.jam.triggerAttack(frequency, tone.immediate(), 0.95);
       engine.heldNotes.set(held, frequency);
       emit({ kind: "jam", pitches: [pitch] });
-      recordTap(engine, MIDDLE_HEIGHT);
+      recordTap(engine);
       recordCall(engine, pitch);
     },
     [emit, recordCall, recordTap],

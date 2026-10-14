@@ -46,24 +46,5 @@ export function liveEnergy(dial: Energy, tapsInLastBar: number): Energy {
   return Math.min(4, dial + boost) as Energy;
 }
 
-/** ユーザーが叩いた記録。height は叩いた位置の高さ（0=いちばん下、1=いちばん上） */
-export type Tap = { at: number; height: number };
-
-/** しばらく叩いていないときの盛り上がり。黙っていても曲は流れ続けるよう、静かすぎない段階にする */
+/** しばらく叩いていないときの盛り上がり。つまみを無くしたので、これを土台に叩いた回数ぶん上げる。黙っていても曲が寂しくなりすぎない段階にする */
 export const RESTING_ENERGY: Energy = 2;
-
-/**
- * 叩いた高さから盛り上がりを決める。直近 windowMs ミリ秒（1小節ぶん）に叩いた高さの平均を、4段階に分ける。
- * 上の方を叩けば激しく、下の方を叩けば静かになる。叩かずにいれば RESTING_ENERGY に戻る
- */
-export function energyFromTaps(taps: readonly Tap[], now: number, windowMs: number): Energy {
-  const recent = taps.filter((tap) => tap.at >= now - windowMs);
-  if (recent.length === 0) return RESTING_ENERGY;
-  const average = recent.reduce((sum, tap) => sum + tap.height, 0) / recent.length;
-  return Math.min(4, Math.floor(average * 4) + 1) as Energy;
-}
-
-/** 叩いた高さから、鳴らす音の強さ（0〜1）を決める。上ほど強い */
-export function tapVelocity(height: number): number {
-  return 0.45 + 0.5 * Math.min(1, Math.max(0, height));
-}

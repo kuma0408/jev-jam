@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESTING_ENERGY, energyFromTaps, liveEnergy, tapVelocity, touchOf } from "./energy.ts";
+import { liveEnergy, touchOf } from "./energy.ts";
 
 describe("touchOf（ユーザーの叩き方）", () => {
   it("直近1小節に叩いた回数を、3段階に分ける", () => {
@@ -34,34 +34,3 @@ describe("liveEnergy（つまみと叩き方を合わせた、実際の盛り上
   });
 });
 
-describe("energyFromTaps（叩いた高さから決める盛り上がり）", () => {
-  const now = 10_000;
-  const window = 3_000;
-  const at = (height: number, ago = 100) => ({ at: now - ago, height });
-
-  it("しばらく叩いていなければ、ゆったりに戻る", () => {
-    expect(RESTING_ENERGY).toBe(2);
-    expect(energyFromTaps([], now, window)).toBe(2);
-    // 1小節より前に叩いたものは数えない
-    expect(energyFromTaps([at(1, 5_000)], now, window)).toBe(2);
-  });
-
-  it("上の方を叩くほど激しく、下の方を叩くほど静かになる", () => {
-    expect(energyFromTaps([at(0.05)], now, window)).toBe(1);
-    expect(energyFromTaps([at(0.4)], now, window)).toBe(2);
-    expect(energyFromTaps([at(0.6)], now, window)).toBe(3);
-    expect(energyFromTaps([at(0.95)], now, window)).toBe(4);
-  });
-
-  it("直近1小節に叩いた高さの平均で決める", () => {
-    expect(energyFromTaps([at(1), at(0)], now, window)).toBe(3);
-  });
-});
-
-describe("tapVelocity（叩いた高さから決める音の強さ）", () => {
-  it("上ほど強く、下ほど弱く鳴らす。下でも聞こえる強さは残す", () => {
-    expect(tapVelocity(1)).toBeGreaterThan(tapVelocity(0));
-    expect(tapVelocity(0)).toBeGreaterThanOrEqual(0.4);
-    expect(tapVelocity(1)).toBeLessThanOrEqual(1);
-  });
-});

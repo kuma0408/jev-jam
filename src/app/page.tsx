@@ -5,15 +5,11 @@ import { BarLogPanel } from "./components/bar-log.tsx";
 import { ControlDock } from "./components/control-dock.tsx";
 import { MelodyPads, PAD_KEY_CODES } from "./components/melody-pads.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
-import { TapStage } from "./components/tap-stage.tsx";
+import { Score, TAP_STEP_HIGH, TAP_STEP_LOW } from "./components/score.tsx";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
-import { PianoRoll } from "./components/piano-roll.tsx";
 import { ADVENTURE_LABELS, AdventureMark, Piano } from "./components/piano.tsx";
 import { TurnBanner } from "./components/turn-banner.tsx";
 import { useSession } from "./session/use-session.ts";
-
-/** キーボードで叩くときの高さの段数。盛り上がりの段数と同じ */
-const KEYBOARD_LEVELS = 4;
 
 export default function Page() {
   const session = useSession();
@@ -23,9 +19,8 @@ export default function Page() {
   const { tap, noteOn, noteOff, padOn, padOff, releaseChord } = session;
   // 旋律を弾く鍵盤。easy は合う音だけの8鍵、piano は12音すべて
   const [keyboard, setKeyboard] = useState<"easy" | "piano">("easy");
-  // キーボードで叩くときの高さ（上下キーで4段に動かす）。最初は「ゆったり」の段
-  const [level, setLevel] = useState(1);
-  const keyboardHeight = (level + 0.5) / KEYBOARD_LEVELS;
+  // キーボードで叩くときの五線の位置（上下キーで動かす）。最初は五線の真ん中のシ
+  const [keyboardStep, setKeyboardStep] = useState(6);
   // 旋律の鍵盤は、掛け合いをするときだけキーで弾ける（普段はキーを叩いても何も起きない）
   const trading = session.settings.trade;
 
@@ -43,7 +38,7 @@ export default function Page() {
       const onControl =
         !onSurface && (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement);
       if (code === "Space" && !onControl && !event.repeat) {
-        if (playing) tap(keyboardHeight);
+        if (playing) tap(keyboardStep);
         else if (status === "idle") session.start();
         event.preventDefault();
         return;
@@ -67,7 +62,7 @@ export default function Page() {
         }
       }
       if (playing && !onControl && (code === "ArrowUp" || code === "ArrowDown")) {
-        setLevel((current) => Math.min(KEYBOARD_LEVELS - 1, Math.max(0, current + (code === "ArrowUp" ? 1 : -1))));
+        setKeyboardStep((current) => Math.min(TAP_STEP_HIGH, Math.max(TAP_STEP_LOW, current + (code === "ArrowUp" ? 1 : -1))));
         // 再生中はページのスクロールより演奏の操作を優先する
         event.preventDefault();
         return;
@@ -93,7 +88,7 @@ export default function Page() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [candidates, choose, keyboard, keyboardHeight, noteOff, noteOn, padOff, padOn, playing, releaseChord, session, status, tap, trading]);
+  }, [candidates, choose, keyboard, keyboardStep, noteOff, noteOn, padOff, padOn, playing, releaseChord, session, status, tap, trading]);
 
   const preparing = playing && session.readyMs === null;
 
@@ -105,9 +100,6 @@ export default function Page() {
           <h1 className="brand">Jev Session</h1>
           {playing && (
             <div className="top-now">
-              <span className="top-chord" aria-label={`いまのコード ${session.chord ?? "なし"}`}>
-                {session.chord ?? "—"}
-              </span>
               <button type="button" className="transport" data-playing="true" onClick={session.stop}>
                 <span className="transport-icon" aria-hidden="true" />
                 停止
@@ -125,12 +117,12 @@ export default function Page() {
           </p>
         )}
 
-        <PianoRoll subscribe={session.subscribe} playing={playing} />
-
-        <TapStage
+        <Score
+          subscribe={session.subscribe}
           status={status}
+          bpm={session.settings.bpm}
           energy={session.liveEnergy}
-          keyboardHeight={keyboardHeight}
+          keyboardStep={keyboardStep}
           onStart={session.start}
           onTap={tap}
         />
