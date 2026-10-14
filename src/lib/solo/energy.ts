@@ -29,7 +29,7 @@ export const TOUCH_CUE: Record<Exclude<Touch, "none">, string> = {
     "The pianist (a human player) is holding long, lush chords. Play softly with long, singing notes and plenty of space. Let it breathe.",
   light: "The pianist (a human player) is adding a few light chords. Leave them some room.",
   active: "The pianist (a human player) is comping actively. Respond to their energy.",
-  busy: "The pianist (a human player) is hammering out busy, driving chords. Rise to meet them with fast sixteenth-note runs at full intensity.",
+  busy: "The pianist (a human player) is comping busily, hammering out driving chords. Rise to meet them with fast sixteenth-note runs at full intensity.",
 };
 
 const ACTIVE_TAPS = 3;
