@@ -7,8 +7,11 @@ import { ENERGY, type Energy } from "../../lib/solo/energy.ts";
 import type { Session, SessionEvent, SessionStatus } from "../session/use-session.ts";
 import { type Frame, type Mark, type YouMark, drawScore } from "./score-draw.ts";
 
-/** 押して弾ける位置の範囲（真ん中のドを0とした段）。ド（C4）から2オクターブ上のド（C6）まで */
-export const TAP_STEP_LOW = 0;
+/**
+ * 押して弾ける位置の範囲（真ん中のドを0とした段）。1オクターブ下のド（C3）から2オクターブ上のド（C6）まで。
+ * 最初は真ん中のドからにしていたが、「低い音も弾きたい」と言われて広げた
+ */
+export const TAP_STEP_LOW = -7;
 export const TAP_STEP_HIGH = 14;
 /** 画面に描く位置の範囲。Jevのソロが五線の外に出ても描けるよう、上下に余裕を持たせる */
 // トロンボーンの低い音（ド、C3）まで描けるよう、下に余裕を取る

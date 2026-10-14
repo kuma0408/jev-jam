@@ -41,17 +41,28 @@ export function pitchAtStep(step: number, chord: string): number {
 
 /** 下に重ねる音の数 */
 const UNDER_NOTES = 3;
+/** これより低い音を押したら、下に重ねる音を2つに減らす（G3） */
+const LOW_TOP = 55;
+const LOW_UNDER_NOTES = 2;
+/** これより低い音（E3 より下）は、上の音と3半音以上空ける。低い音域で音を詰めると濁る */
+const LOW_REGISTER = 52;
+const LOW_MIN_INTERVAL = 3;
 
 /**
- * top をいちばん上にして、その下にコードの音を3つ重ねた和音（低い順）。
- * すぐ下の半音でぶつかる音は飛ばし、さらに下の同じ音を使う
+ * top をいちばん上にして、その下にコードの音を重ねた和音（低い順）。
+ * ふつうは3つ、低いところを押したときは2つ重ねる。
+ * すぐ下の半音でぶつかる音は飛ばし、さらに下の同じ音を使う。低い音域では、上の音と詰まりすぎる音も飛ばす
  */
 export function voicingUnder(top: number, chord: string): number[] {
   const tones = new Set(chordTones(chord).map(pitchClassOf));
   tones.delete(top % 12);
+  const count = top < LOW_TOP ? LOW_UNDER_NOTES : UNDER_NOTES;
   const under: number[] = [];
-  for (let pitch = top - 2; under.length < UNDER_NOTES; pitch--) {
-    if (tones.has(((pitch % 12) + 12) % 12)) under.unshift(pitch);
+  for (let pitch = top - 2; under.length < count; pitch--) {
+    if (!tones.has(((pitch % 12) + 12) % 12)) continue;
+    const above = under[0] ?? top;
+    if (pitch < LOW_REGISTER && above - pitch < LOW_MIN_INTERVAL) continue;
+    under.unshift(pitch);
   }
   return [...under, top];
 }
