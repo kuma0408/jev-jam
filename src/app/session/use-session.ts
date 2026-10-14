@@ -59,6 +59,8 @@ export type SessionSettings = {
 
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
 const JAM_TONE_BASE = 72;
+/** 押さえたままコードが変わったときに、押さえ直す和音の強さ */
+const REVOICE_VELOCITY = 0.6;
 /** 押さえずに鳴らした音（コードの札や鍵盤）を、伸ばした長さとして数える秒数 */
 const SHORT_PRESS_SECONDS = 0.2;
 /** 合う音だけの鍵盤の、いちばん左の音のおおよその高さ（MIDIノート番号） */
@@ -188,6 +190,11 @@ type Engine = {
   soloGains: import("tone").Gain[];
   /** ソロ全体の音量 */
   soloVolume: import("tone").Volume;
+  /**
+   * 息の音の音量。ソロの明るさを決めるフィルターを通さない別の経路にする。
+   * 通すと、弱い音のときに息の音の高い成分が削られて、ほぼ聞こえなくなる
+   */
+  breathVolume: import("tone").Volume;
   /** 強く吹いた音ほど明るくするためのフィルター */
   soloFilter: import("tone").Filter;
   reverb: import("tone").Reverb;
@@ -245,6 +252,8 @@ type Engine = {
   pressed: number[] | null;
   /** 五線を押さえて鳴らしている和音（周波数）。離したときに止める */
   struck: number[] | null;
+  /** 押さえている和音の、押した位置（段）と、どのコードの和音か。コードが変わったら押さえ直すのに使う */
+  struckAt: { step: number | undefined; chord: string } | null;
   /** 次の小節を依頼するときに渡す、直前の小節の記録 */
   previous: { pitch: number; memo: SoloMemo };
   /** 次の小節のために最後に出した依頼。設定が変わったときに出し直す */
@@ -331,7 +340,7 @@ export function useSession(): Session {
     soloDb: 0,
     // 掛け合いは、旋律を弾くのが未経験者には難しすぎたので既定では使わない
     trade: false,
-    breath: 0.5,
+    breath: 0.6,
   });
   const [chord, setChord] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ChordCandidate[]>([]);
@@ -442,6 +451,29 @@ export function useSession(): Session {
     [countTaps],
   );
 
+  /**
+   * 和音を押さえたままコードが変わったら、同じ位置のまま新しいコードの和音に押さえ直す。
+   * そのままだと、前のコードの和音が次のコードの上で鳴り続けて、伴奏が進行から外れて聞こえる
+   */
+  const revoiceHeld = useCallback(
+    (engine: Engine, chord: string, time: number) => {
+      if (!engine.struck || !engine.struckAt || engine.struckAt.chord === chord) return;
+      const { tone } = engine;
+      const { step } = engine.struckAt;
+      const voicing = step === undefined ? compVoicing(chord) : voicingUnder(pitchAtStep(step, chord), chord);
+      const frequencies = voicing.map((pitch) => tone.Frequency(pitch, "midi").toFrequency());
+      engine.jam.triggerRelease(engine.struck, time);
+      // 押さえ直しは、新しく弾いたときより少し弱く鳴らす
+      engine.jam.triggerAttack(frequencies, time, REVOICE_VELOCITY);
+      engine.struck = frequencies;
+      engine.struckAt = { step, chord };
+      tone.getDraw().schedule(() => {
+        if (engineRef.current === engine) emit({ kind: "jam", pitches: voicing, held: true });
+      }, time);
+    },
+    [emit],
+  );
+
   /** 小節の頭で呼ばれ、その小節の演奏の計画を作って、次の小節の準備を始める */
   const startBar = useCallback(
     (engine: Engine, time: number) => {
@@ -488,6 +520,7 @@ export function useSession(): Session {
       engine.selected = null;
       engine.pendingSwitch = null;
       engine.heldOver = false;
+      revoiceHeld(engine, current, time);
       const next = nextChordCandidates(engine.history);
 
       const beat = tone.Time("4n").toSeconds();
@@ -610,7 +643,7 @@ export function useSession(): Session {
         emit({ kind: "bar", bar, chord: current });
       }, time);
     },
-    [countTaps, emit, prepare],
+    [countTaps, emit, prepare, revoiceHeld],
   );
 
   /**
@@ -621,6 +654,7 @@ export function useSession(): Session {
     (engine: Engine, plan: BarPlan, target: string, time: number) => {
       plan.chord = target;
       engine.history.push(target);
+      revoiceHeld(engine, target, time);
       const next = nextChordCandidates(engine.history);
       plan.band = accompaniment(target, { bar: plan.bar, energy: plan.energy, deferLastBass: true }, replay(plan.seeds));
       if (plan.solo?.plan) {
@@ -642,7 +676,7 @@ export function useSession(): Session {
         emit({ kind: "bar", bar: plan.bar, chord: target });
       }, time);
     },
-    [emit],
+    [emit, revoiceHeld],
   );
 
   /** 次の小節の頭で鳴っているはずのコード。ユーザーがこの小節で弾いていればそのまま、弾いていなければ既定の候補 */
@@ -767,6 +801,7 @@ export function useSession(): Session {
       ...Object.values(engine.solos),
       ...engine.soloGains,
       engine.soloVolume,
+      engine.breathVolume,
       engine.soloFilter,
       engine.reverb,
       engine.comp,
@@ -801,17 +836,20 @@ export function useSession(): Session {
       const reverb = new tone.Reverb({ decay: 1.6, wet: 0.16 }).toDestination();
       const soloFilter = new tone.Filter({ type: "lowpass", frequency: 4000, rolloff: -12 }).connect(reverb);
       const soloVolume = new tone.Volume(settingsRef.current.soloDb).connect(soloFilter);
+      const breathVolume = new tone.Volume(settingsRef.current.soloDb).connect(reverb);
       const soloGains: Engine["soloGains"] = [];
       const solos = Object.fromEntries(
         SOLO_VOICES.map((voice) => {
           const instrument = SOLO_INSTRUMENTS[voice];
           const gain = new tone.Gain(tone.dbToGain(instrument.gainDb)).connect(soloVolume);
-          soloGains.push(gain);
+          const breathGain = new tone.Gain(tone.dbToGain(instrument.gainDb)).connect(breathVolume);
+          soloGains.push(gain, breathGain);
           return [
             voice,
             createExpressiveVoice(tone, instrument.samples, gain, instrument.startOffset, {
               level: instrument.breath,
               amount: () => settingsRef.current.breath,
+              output: breathGain,
             }),
           ];
         }),
@@ -821,6 +859,7 @@ export function useSession(): Session {
         solos,
         soloGains,
         soloVolume,
+        breathVolume,
         soloFilter,
         reverb,
         comp: new tone.Sampler({ urls: COMP_SAMPLES, release: 0.6 }).connect(reverb),
@@ -847,6 +886,7 @@ export function useSession(): Session {
         pendingSwitch: null,
         pressed: null,
         struck: null,
+        struckAt: null,
         previous: { pitch: SOLO_START_PITCH, memo: {} },
         presses: [],
         holding: null,
@@ -973,6 +1013,7 @@ export function useSession(): Session {
     if (!engine?.struck) return;
     engine.jam.triggerRelease(engine.struck, engine.tone.immediate());
     engine.struck = null;
+    engine.struckAt = null;
     releasePress(engine);
     emit({ kind: "lift" });
   }, [emit, releasePress]);
@@ -991,6 +1032,7 @@ export function useSession(): Session {
       // 離すまで伸ばす
       engine.jam.triggerAttack(frequencies, tone.immediate(), 0.9);
       engine.struck = frequencies;
+      engine.struckAt = { step, chord: current };
       emit({ kind: "jam", pitches: voicing, held: true });
       engine.lastCompTapBar = engine.bar;
       recordTap(engine, true);
@@ -1054,6 +1096,7 @@ export function useSession(): Session {
     if (engine) {
       engine.tone.getTransport().bpm.value = settings.bpm;
       engine.soloVolume.volume.value = settings.soloDb;
+      engine.breathVolume.volume.value = settings.soloDb;
     }
   }, [settings.bpm, settings.soloDb]);
 

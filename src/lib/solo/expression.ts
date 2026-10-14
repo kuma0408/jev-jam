@@ -189,10 +189,13 @@ export function renderExpression(expression: NoteExpression, seconds: number): {
   return { pitch, gain };
 }
 
-/** 伸ばしている間の息の音の大きさ（音の大きさに対する割合） */
-const BREATH_LEVEL = 0.06;
-/** 吹き始めのかすれの大きさ */
-const CHIFF_LEVEL = 0.3;
+/**
+ * 伸ばしている間の息の音の大きさ（音の大きさに対する割合）。
+ * 最初は 0.06 にしたが、聴いて「ほぼ分からない」と言われたので約4倍（+12dB）にした
+ */
+const BREATH_LEVEL = 0.24;
+/** 吹き始めのかすれの大きさ。最初は 0.3 */
+const CHIFF_LEVEL = 1.2;
 /** 吹き始めのかすれが消えていく速さ（時定数、秒） */
 const CHIFF_SECONDS = 0.03;
 

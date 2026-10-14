@@ -64,7 +64,8 @@ export const SOLO_INSTRUMENTS: Record<SoloVoice, SoloInstrument> = {
     ),
     // 録音は C3〜F4 を置いている（配布元にはもっと低い音もあるが、ソロでは使わないので置いていない）
     range: { low: 48, high: 67 },
-    gainDb: -12,
+    // 録音の大きさはサックスと同じくらいだが、低い音域なので聴くと「かなり小さい」と言われた。8dB上げる
+    gainDb: -4,
     startOffset: 0.025,
     breath: 1,
   },

@@ -53,14 +53,16 @@ function semitoneRatio(semitones: number): number {
 const BREATH_FREQUENCY_RATIO = 3;
 const BREATH_FREQUENCY_MIN = 700;
 const BREATH_FREQUENCY_MAX = 6000;
-/** 息の音を通す幅（フィルターの Q）。小さいほど広い */
-const BREATH_Q = 0.9;
+/** 息の音を通す幅（フィルターの Q）。小さいほど広い。0.9 では削りすぎて聞こえなかったので広げた */
+const BREATH_Q = 0.5;
 
 export type BreathOptions = {
   /** 楽器ごとの息の音の多さ（0〜1）。息を使わない楽器（エレピ）は 0 */
   level: number;
   /** ユーザーが設定で決める息の量（0〜1）。鳴らすたびに読む */
   amount: () => number;
+  /** 息の音の出力先。楽器の音とは別の経路にする（明るさのフィルターを通さないため） */
+  output: import("tone").InputNode;
 };
 
 /**
@@ -117,14 +119,14 @@ export function createExpressiveVoice(
       // 息の音: 音の高さのあたりだけを通したノイズを、吹き始めは強く、その後は小さく重ねる
       const amount = breath && noise ? breath.level * breath.amount() : 0;
       let breathPath: { filter: import("tone").Filter; gain: import("tone").Gain } | null = null;
-      if (noise && amount > 0) {
+      if (breath && noise && amount > 0) {
         const center = tone.Frequency(note.pitch, "midi").toFrequency() * BREATH_FREQUENCY_RATIO;
         const filter = new tone.Filter({
           type: "bandpass",
           frequency: Math.min(BREATH_FREQUENCY_MAX, Math.max(BREATH_FREQUENCY_MIN, center)),
           Q: BREATH_Q,
         });
-        const breathGain = new tone.Gain(0).connect(output);
+        const breathGain = new tone.Gain(0).connect(breath.output);
         noise.connect(filter);
         filter.connect(breathGain);
         breathGain.gain.setValueCurveAtTime(breathCurve(curves.gain, note.duration, note.velocity, amount), note.time, note.duration);
