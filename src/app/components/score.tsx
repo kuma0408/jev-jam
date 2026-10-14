@@ -208,7 +208,7 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
       <div className="score-foot">
         <p id="score-status" className="score-status" role="status">
           {playing
-            ? `盛り上がり「${ENERGY[energy].label}」。押している間、和音が伸びます。上の方ほど高い和音。たくさん弾くほど盛り上がります。`
+            ? `盛り上がり「${ENERGY[energy].label}」。上の方ほど高い和音。長く押さえるとしっとり、連打すると激しくなります。`
             : "押すと、バンドとJevのソロが始まります。"}
         </p>
       </div>

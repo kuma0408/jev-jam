@@ -28,6 +28,7 @@ import {
   leadsOut,
   rhythmById,
   rhythmsFor,
+  settleDown,
 } from "./rhythms.ts";
 
 export type PhraseBarsInput = {
@@ -309,8 +310,10 @@ export async function generatePhraseBars(
     // 走っている最中は、走るリズムを「最近使ったから」と下げない。続けて走らせるため
     const penalized = penalizeRecent(probabilities, runs > 0 ? used.filter((id) => !isRun(id)) : used);
     const shaped = holdBackLongNotes(keepRunning(boostSixteenths(penalized, input.bpm), runs));
+    // 伴奏が長く押さえてしっとりしているときは、ソロも落ち着かせる
+    const settled = input.touch === "sustained" ? settleDown(shaped) : shaped;
     const odds = Object.fromEntries(
-      Object.entries(biasByEnergy(shaped, level)).filter(([id, odd]) => odd > 0 && allowed(rhythmById(id), constraint)),
+      Object.entries(biasByEnergy(settled, level)).filter(([id, odd]) => odd > 0 && allowed(rhythmById(id), constraint)),
     );
     // 縛りに合うものにJevが確率を置いていなければ、縛りに合う最初のリズムにする
     return Object.keys(odds).length > 0

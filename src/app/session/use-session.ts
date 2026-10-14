@@ -18,7 +18,7 @@ import { aimPitch, fitsChord } from "../../lib/solo/aim.ts";
 import type { SoloBar, SoloMemo, SoloNote, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import { padPitches } from "../../lib/music/pads.ts";
 import { type PlayedNote, type Turn, TURN_BARS, prepareBeat, summarizeCall, turnOf } from "../../lib/solo/call.ts";
-import { type Energy, RESTING_ENERGY, type Touch, liveEnergy, touchOf } from "../../lib/solo/energy.ts";
+import { type Energy, type Press, RESTING_ENERGY, type Touch, compTouch, touchEnergy } from "../../lib/solo/energy.ts";
 import { pitchAtStep, voicingUnder } from "../../lib/music/staff.ts";
 import { type NoteExpression, planExpression } from "../../lib/solo/expression.ts";
 import { renderCells } from "../../lib/solo/render-cells.ts";
@@ -57,6 +57,8 @@ export type SessionSettings = {
 
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
 const JAM_TONE_BASE = 72;
+/** 押さえずに鳴らした音（コードの札や鍵盤）を、伸ばした長さとして数える秒数 */
+const SHORT_PRESS_SECONDS = 0.2;
 /** 合う音だけの鍵盤の、いちばん左の音のおおよその高さ（MIDIノート番号） */
 export const PAD_LOW = 64;
 /** 押さえている音の覚え書きで、合う音だけの鍵盤の分を12音の鍵盤と区別するための番号のずらし */
@@ -206,8 +208,10 @@ type Engine = {
   selected: string | null;
   /** 古い応答を捨てるための通し番号 */
   requestToken: number;
-  /** ユーザーが叩いた時刻（performance.now のミリ秒）。直近1小節ぶんだけ残す */
-  taps: number[];
+  /** ユーザーが押した和音の、押した時刻と離した時刻（秒）。直近1小節ぶんだけ残す */
+  presses: Press[];
+  /** いま押さえている和音の記録。離したときに離した時刻を入れる */
+  holding: Press | null;
   /** ユーザーが最後に伴奏を刻んだ小節。刻んでいる間は自動の伴奏を黙らせる */
   lastCompTapBar: number;
   /** 小節の終わりまで伸びて、まだ鳴っているソロの音。次の小節で持ち越すか切るかを決める */
@@ -336,7 +340,8 @@ export function useSession(): Session {
   const [turn, setTurn] = useState<Session["turn"]>(null);
   const [reply, setReply] = useState<Session["reply"]>(null);
   /** ユーザーが直近1小節に叩いた回数 */
-  const [tapCount, setTapCount] = useState(0);
+  /** 直前1小節の伴奏の質感 */
+  const [touch, setTouch] = useState<Touch>("none");
   /** 叩いた回数から決まる、いまの盛り上がり */
   const [live, setLive] = useState<Energy>(RESTING_ENERGY);
 
@@ -344,15 +349,19 @@ export function useSession(): Session {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
-  /** 直近1小節に叩いた回数を数え直し、古い記録を捨てる */
+  /**
+   * 直前1小節の伴奏の質感（押した回数と伸ばした長さ）を求め直し、古い記録を捨てる。
+   * 少なく長く押さえればしっとり、連打すれば激しくなる
+   */
   const countTaps = useCallback((engine: Engine) => {
-    const barMs = (60_000 / settingsRef.current.bpm) * 4;
-    const since = performance.now() - barMs;
-    engine.taps = engine.taps.filter((at) => at >= since);
-    const energy = liveEnergy(RESTING_ENERGY, engine.taps.length);
-    setTapCount(engine.taps.length);
+    const beatSeconds = 60 / settingsRef.current.bpm;
+    const now = performance.now() / 1000;
+    engine.presses = engine.presses.filter((press) => (press.end ?? now) >= now - beatSeconds * 4);
+    const touch = compTouch(engine.presses, now, beatSeconds * 4, beatSeconds);
+    const energy = touchEnergy(touch);
+    setTouch(touch);
     setLive(energy);
-    return energy;
+    return { energy, touch };
   }, []);
 
   const emit = useCallback((event: SessionEvent) => {
@@ -388,8 +397,7 @@ export function useSession(): Session {
       }
       setReadyMs(null);
       const { bpm, strategy, voice, trade: trading } = settingsRef.current;
-      const taps = engine.taps.length;
-      const energy = countTaps(engine);
+      const { energy, touch } = countTaps(engine);
       const { range } = SOLO_INSTRUMENTS[voice];
       // 掛け合いでは、これから作る小節が応えの1小節目か2小節目かを伝える。
       // 1小節目なら、ユーザーが弾いた内容の要約も渡す
@@ -405,7 +413,7 @@ export function useSession(): Session {
         previousPitch: call ? intoRange(call.lastPitch, range) : previousPitch,
         range,
         energy,
-        touch: touchOf(taps),
+        touch,
         // これから作るのは、いまの小節の次の小節。4小節のまとまりの中の位置を伝える
         barInPhrase: trade ? (answering ? 0 : 1) : engine.bar % 4,
         sustained: sustained && !(trade && answering),
@@ -482,7 +490,7 @@ export function useSession(): Session {
       const beat = tone.Time("4n").toSeconds();
       const ratio = swingRatioFor(settingsRef.current.bpm);
       const place = (beats: number, swing: boolean) => time + (swing ? swingBeats(beats, ratio) : beats) * beat;
-      const energy = countTaps(engine);
+      const { energy } = countTaps(engine);
       const seeds = Array.from({ length: 8 }, () => Math.random());
 
       // 前の小節から鳴り続けている音を、この小節の入り方に合わせて処理する
@@ -772,7 +780,7 @@ export function useSession(): Session {
     setCandidates([]);
     setSelected(null);
     setReadyMs(null);
-    setTapCount(0);
+    setTouch("none");
     setTurn(null);
     setReply(null);
   }, []);
@@ -831,7 +839,8 @@ export function useSession(): Session {
         pressed: null,
         struck: null,
         previous: { pitch: SOLO_START_PITCH, memo: {} },
-        taps: [],
+        presses: [],
+        holding: null,
         lastCompTapBar: -1,
         lastRequest: null,
       };
@@ -879,10 +888,27 @@ export function useSession(): Session {
     }
   }, [onBeat, prepare, stop]);
 
-  /** ユーザーが叩いたことを記録する。たくさん叩くほど盛り上がり、盛り上がりが変わればソロの作り直しが走る */
+  /**
+   * ユーザーが弾いたことを記録する。held が true なら、離したとき（releasePress）に長さが決まる。
+   * 伴奏の質感が変われば、盛り上がりが変わってソロの作り直しが走る
+   */
   const recordTap = useCallback(
+    (engine: Engine, held = false) => {
+      const at = performance.now() / 1000;
+      const press: Press = { at, end: held ? null : at + SHORT_PRESS_SECONDS };
+      engine.presses.push(press);
+      if (held) engine.holding = press;
+      countTaps(engine);
+    },
+    [countTaps],
+  );
+
+  /** 押さえていた和音を離した時刻を記録する */
+  const releasePress = useCallback(
     (engine: Engine) => {
-      engine.taps.push(performance.now());
+      if (!engine.holding) return;
+      engine.holding.end = performance.now() / 1000;
+      engine.holding = null;
       countTaps(engine);
     },
     [countTaps],
@@ -935,8 +961,9 @@ export function useSession(): Session {
     if (!engine?.struck) return;
     engine.jam.triggerRelease(engine.struck, engine.tone.immediate());
     engine.struck = null;
+    releasePress(engine);
     emit({ kind: "lift" });
-  }, [emit]);
+  }, [emit, releasePress]);
 
   const strike = useCallback(
     (step?: number) => {
@@ -954,7 +981,7 @@ export function useSession(): Session {
       engine.struck = frequencies;
       emit({ kind: "jam", pitches: voicing, held: true });
       engine.lastCompTapBar = engine.bar;
-      recordTap(engine);
+      recordTap(engine, true);
     },
     [emit, lift, recordTap],
   );
@@ -1018,7 +1045,6 @@ export function useSession(): Session {
     }
   }, [settings.bpm, settings.soloDb]);
 
-  const touch = touchOf(tapCount);
 
   // 盛り上がりの段階が変わったら（つまみを動かした、または叩いて段階が上がった）、次の小節のソロを作り直す。
   // 効くのを1小節早めるため。作り直しはJevを呼ぶので、1小節に1回までにする。

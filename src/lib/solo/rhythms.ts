@@ -498,3 +498,28 @@ export function holdBackTies(probabilities: Record<string, number>): Record<stri
     Object.entries(probabilities).map(([id, probability]) => [id, TIE_IDS.has(id) ? probability * TIE_FACTOR : probability]),
   );
 }
+
+/** 伴奏がしっとりしているとき、16分音符を含むリズムに掛ける倍率 */
+const SETTLE_SIXTEENTH_FACTOR = 0.15;
+/** 伴奏がしっとりしているとき、1拍以上伸ばす音を含むリズムに掛ける倍率 */
+const SETTLE_LONG_FACTOR = 2.5;
+
+/**
+ * 伴奏が長く押さえてしっとりしているとき、ソロを落ち着かせる。16分音符を減らし、長く伸ばす音を増やす。
+ * Jevにも伴奏の様子は伝えているが、伴奏に合わせて変わったことが必ず音に出るよう、ルールでも効かせる
+ */
+export function settleDown(probabilities: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(probabilities).map(([id, probability]) => {
+      const rhythm = RHYTHM_LOOKUP.get(id);
+      if (!rhythm) return [id, probability];
+      const factor =
+        rhythm.run || rhythm.sixteenths
+          ? SETTLE_SIXTEENTH_FACTOR
+          : rhythm.hits.some((hit) => hit.dur >= 1)
+            ? SETTLE_LONG_FACTOR
+            : 1;
+      return [id, probability * factor];
+    }),
+  );
+}
