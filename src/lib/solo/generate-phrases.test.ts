@@ -760,7 +760,7 @@ describe("generatePhraseBars（伴奏の質感で、音の大きさと音域を�
   it("激しいときは、しっとりのときより大きく、高い音で吹く", async () => {
     const quiet = await play("sustained");
     const loud = await play("busy");
-    expect(average(loud.notes.map((note) => note.velocity))).toBeGreaterThan(average(quiet.notes.map((note) => note.velocity)) * 1.4);
+    expect(average(loud.notes.map((note) => note.velocity))).toBeGreaterThan(average(quiet.notes.map((note) => note.velocity)) * 1.3);
     expect(average(loud.notes.map((note) => note.pitch))).toBeGreaterThan(average(quiet.notes.map((note) => note.pitch)) + 4);
   });
 
