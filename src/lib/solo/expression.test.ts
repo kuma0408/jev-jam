@@ -217,3 +217,28 @@ describe("breathCurve（音に重ねる息の音の大きさ）", () => {
     expect(breathCurve(gain, 1, 1, 0).every((level) => level === 0)).toBe(true);
   });
 });
+
+describe("planExpression（伴奏がしっとりしているとき）", () => {
+  const notes: SoloNote[] = [0, 1, 2, 3].map((beat) => ({
+    pitch: 67,
+    startBeats: beat,
+    durationBeats: 0.6,
+    velocity: 0.5,
+    swing: false,
+  }));
+
+  it("ビブラートをかける音を増やす（短めの音にもかける）", () => {
+    const usual = planExpression(notes, { secondsPerBeat: 0.75 }, () => 0.5);
+    const sustained = planExpression(notes, { secondsPerBeat: 0.75, mood: "sustained" }, () => 0.5);
+    expect(sustained.filter((expression) => expression.vibrato).length).toBeGreaterThan(
+      usual.filter((expression) => expression.vibrato).length,
+    );
+  });
+
+  it("ビブラートを深くする", () => {
+    const [usual] = planExpression([{ ...notes[0]!, durationBeats: 2 }], { secondsPerBeat: 0.75 }, () => 0.5);
+    const [sustained] = planExpression([{ ...notes[0]!, durationBeats: 2 }], { secondsPerBeat: 0.75, mood: "sustained" }, () => 0.5);
+    const depth = (expression: NoteExpression) => Math.max(...renderExpression(expression, 1.5).pitch.map(Math.abs));
+    expect(depth(sustained!)).toBeGreaterThan(depth(usual!) * 1.2);
+  });
+});

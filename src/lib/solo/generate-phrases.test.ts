@@ -747,3 +747,25 @@ describe("generatePhraseBars（区切りの移り先の選ばれやすさ）", (
     expect(biased[0]!.section!.odds).toEqual({ stay: 0.5, "royal-road": 0.25, marusa: 0.25 });
   });
 });
+
+describe("generatePhraseBars（伴奏の質感で、音の大きさと音域を変える）", () => {
+  const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const play = async (touch: "sustained" | "busy") => {
+    const { client } = scriptedClient({ ...picks, rhythm_second: "r-four-eighths" });
+    const [bar] = await generatePhraseBars(client, { ...input, barInPhrase: 1, touch });
+    return bar!;
+  };
+
+  it("激しいときは、しっとりのときより大きく、高い音で吹く", async () => {
+    const quiet = await play("sustained");
+    const loud = await play("busy");
+    expect(average(loud.notes.map((note) => note.velocity))).toBeGreaterThan(average(quiet.notes.map((note) => note.velocity)) * 1.4);
+    expect(average(loud.notes.map((note) => note.pitch))).toBeGreaterThan(average(quiet.notes.map((note) => note.pitch)) + 4);
+  });
+
+  it("別のコードへ乗せ直しても、音の大きさの倍率は保たれる", async () => {
+    const loud = await play("busy");
+    const moved = renderCells(loud.plan!.cells, "G7", loud.plan!.render);
+    expect(average(moved.map((note) => note.velocity))).toBeCloseTo(average(loud.notes.map((note) => note.velocity)), 1);
+  });
+});
