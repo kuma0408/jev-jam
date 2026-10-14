@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SoloNote } from "./api.ts";
-import { type NoteExpression, planExpression, renderExpression } from "./expression.ts";
+import { type NoteExpression, breathCurve, planExpression, renderExpression } from "./expression.ts";
 
 const note = (pitch: number, startBeats: number, durationBeats: number, velocity = 0.7): SoloNote => ({
   pitch,
@@ -190,5 +190,30 @@ describe("renderExpression（1音の中の、音程と音量の動き）", () =>
         expect(value).toBeLessThanOrEqual(1);
       }
     }
+  });
+});
+
+describe("breathCurve（音に重ねる息の音の大きさ）", () => {
+  const gain = Array.from({ length: 41 }, () => 1);
+
+  it("音と同じ数の点を返す", () => {
+    expect(breathCurve(gain, 1, 0.8, 1)).toHaveLength(gain.length);
+  });
+
+  it("吹き始めに強いかすれがあり、その後は小さな息の音が残る", () => {
+    const curve = breathCurve(gain, 1, 0.8, 1);
+    expect(curve[0]!).toBeGreaterThan(curve.at(-1)! * 3);
+    expect(curve.at(-1)!).toBeGreaterThan(0);
+  });
+
+  it("伸ばしている間の息の音は、音の大きさの動きに沿う", () => {
+    const fading = gain.map((_, index) => 1 - index / (gain.length - 1));
+    const curve = breathCurve(fading, 1, 0.8, 1);
+    expect(curve.at(-1)!).toBeLessThan(breathCurve(gain, 1, 0.8, 1).at(-1)!);
+  });
+
+  it("強く吹くほど、息の音も大きい。量を0にすると鳴らさない", () => {
+    expect(breathCurve(gain, 1, 1, 1)[20]!).toBeGreaterThan(breathCurve(gain, 1, 0.3, 1)[20]!);
+    expect(breathCurve(gain, 1, 1, 0).every((level) => level === 0)).toBe(true);
   });
 });
