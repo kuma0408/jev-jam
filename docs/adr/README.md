@@ -46,3 +46,4 @@
 | [0040](0040-jev-moves-between-progressions.md) | 8小節ごとの区切りで、Jevが定番進行を続けるか、別の進行へ移るかを選ぶ | 設計判断 | Accepted（一部 0042 で置き換え） | 2026-10-14 |
 | [0041](0041-home-progressions.md) | カノン進行を外し、丸サ進行と Just the Two of Us進行を基本にする | 設計判断 | Accepted | 2026-10-14 |
 | [0042](0042-lead-in-chord-to-any-progression.md) | 導くコードを挟んで、どの進行へも移れるようにする。ジャズ寄りの進行を3つ足す | 設計判断 | Accepted | 2026-10-14 |
+| [0043](0043-drop-stepwise-descent.md) | 順次下降を一覧から外す | 設計判断 | Accepted | 2026-10-14 |
