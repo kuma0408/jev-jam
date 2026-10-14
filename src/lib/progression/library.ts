@@ -48,11 +48,7 @@ export const PROGRESSIONS: readonly Progression[] = [
     id: "marusa",
     mood: "IV-III7-vi-I7, a city-pop favorite. Stylish, urban and slightly melancholic.",
   },
-  {
-    name: "カノン進行", chords: ["Cmaj7", "G7", "Am7", "Em7", "Fmaj7", "Cmaj7", "Fmaj7", "G7"], loop: true, pop: true,
-    id: "canon",
-    mood: "The Pachelbel Canon progression. Stately, gentle and uplifting, an eight-bar journey.",
-  },
+
   {
     name: "小室進行", chords: ["Am7", "Fmaj7", "G7", "Cmaj7"], loop: true, pop: true,
     id: "komuro",

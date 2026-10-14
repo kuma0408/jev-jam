@@ -29,3 +29,20 @@ export function sectionOptions(candidateChords: readonly string[], current: stri
     (progression) => progression.name !== current && candidateChords.includes(progression.chords[0]!),
   );
 }
+
+/**
+ * 基本の進行。セッションはここから始まり、区切りでもここへ戻りやすくする。
+ * ジャズ/ネオソウルのセッションに合う2つを選んだ（カノン進行は「ジャズに合わない」と言われて一覧から外した）
+ */
+export const HOME_PROGRESSIONS: readonly Progression[] = ["marusa", "just-the-two"].map((id) => progressionById(id)!);
+
+/** 最初に乗る進行。1小節に1つのコードで、いちばん合わせやすい丸サ進行にする */
+export const START_PROGRESSION: Progression = HOME_PROGRESSIONS[0]!;
+
+/** 区切りで、基本の進行を選ばれやすくする倍率 */
+const HOME_BIAS = 3;
+
+/** 区切りの移り先としての選ばれやすさの倍率。Jevが返した確率に掛けて抽選する */
+export function sectionBias(progression: Progression): number {
+  return HOME_PROGRESSIONS.includes(progression) ? HOME_BIAS : 1;
+}

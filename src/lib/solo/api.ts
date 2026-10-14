@@ -70,7 +70,8 @@ export type SectionQuestion = {
   currentMood?: string;
   /** いまの進行を何小節続けているか */
   barsOn: number;
-  options: { id: string; mood: string }[];
+  /** bias は選ばれやすさの倍率（省けば1）。基本の進行へ戻りやすくするのに使う */
+  options: { id: string; mood: string; bias?: number }[];
 };
 
 /** 1小節ぶんのソロ */

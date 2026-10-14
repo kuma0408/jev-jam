@@ -200,11 +200,12 @@ function parseSection(value: unknown): SectionQuestion {
   if (typeof barsOn !== "number" || !Number.isInteger(barsOn) || barsOn < 0 || barsOn > 10_000) fail("section.barsOn");
   if (!Array.isArray(options) || options.length > MAX_SECTION_OPTIONS) fail("section.options");
   const parsed = options.map((option) => {
-    const { id, mood } = (typeof option === "object" && option !== null ? option : {}) as Record<string, unknown>;
+    const { id, mood, bias } = (typeof option === "object" && option !== null ? option : {}) as Record<string, unknown>;
     if (typeof id !== "string" || !ID_PATTERN.test(id) || typeof mood !== "string" || !MOOD_PATTERN.test(mood)) {
       fail("section.options の要素");
     }
-    return { id, mood };
+    if (bias !== undefined && (typeof bias !== "number" || !(bias > 0 && bias <= 100))) fail("section.options の bias");
+    return { id, mood, ...(bias === undefined ? {} : { bias }) };
   });
   return { current: current as string | null, ...(currentMood ? { currentMood: currentMood as string } : {}), barsOn, options: parsed };
 }

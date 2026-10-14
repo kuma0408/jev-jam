@@ -44,3 +44,4 @@
 | [0038](0038-two-chords-in-one-bar.md) | 1小節に2つのコードを置けるようにする（Just the Two of Us進行を4小節で回す） | 苦労と解決 | Accepted | 2026-10-14 |
 | [0039](0039-lower-tap-range.md) | 押せる和音を1オクターブ下（C3）まで広げる。低いところでは音を減らして濁らせない | 設計判断 | Accepted | 2026-10-14 |
 | [0040](0040-jev-moves-between-progressions.md) | 8小節ごとの区切りで、Jevが定番進行を続けるか、別の進行へ移るかを選ぶ | 設計判断 | Accepted | 2026-10-14 |
+| [0041](0041-home-progressions.md) | カノン進行を外し、丸サ進行と Just the Two of Us進行を基本にする | 設計判断 | Accepted | 2026-10-14 |

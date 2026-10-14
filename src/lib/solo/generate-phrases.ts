@@ -419,8 +419,18 @@ export async function generatePhraseBars(
 
   const first = await client.decide(baseState, firstQuestions);
   // 区切りで続けるか移るか。抽選して、確率と一緒に画面側へ返す
+  // 移り先に倍率が付いていれば、その分だけ選ばれやすくする（画面に出す確率は、Jevが返したまま）
+  const sectionBiases = new Map(input.section?.options.map((option) => [option.id, option.bias ?? 1]));
   const section = first.section
-    ? { choice: sampleFromDistribution(first.section.probabilities, random), odds: first.section.probabilities }
+    ? {
+        choice: sampleFromDistribution(
+          Object.fromEntries(
+            Object.entries(first.section.probabilities).map(([id, odd]) => [id, odd * (sectionBiases.get(id) ?? 1)]),
+          ),
+          random,
+        ),
+        odds: first.section.probabilities,
+      }
     : null;
   // 新しいまとまりに入るときは、直前の形と流れを「過去のもの」に回す
   const pastShapes = planning

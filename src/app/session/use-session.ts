@@ -16,9 +16,11 @@ import { chordTones, pitchClassOf } from "../../lib/music/chord.ts";
 import { type ChordCandidate, nextChordCandidates } from "../../lib/progression/candidates.ts";
 import type { Progression } from "../../lib/progression/library.ts";
 import {
+  START_PROGRESSION,
   isSectionStart,
   progressionById,
   progressionByName,
+  sectionBias,
   sectionOptions,
 } from "../../lib/progression/sections.ts";
 import { aimPitch, fitsChord } from "../../lib/solo/aim.ts";
@@ -32,7 +34,8 @@ import { renderCells } from "../../lib/solo/render-cells.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
 import { type ExpressiveVoice, type HeldNote, createExpressiveVoice } from "./expressive-voice.ts";
 
-const START_CHORD = "Cmaj7";
+/** 最初の小節のコード。基本の進行（丸サ進行）の頭から始めて、序盤から合わせやすくする */
+const START_CHORD = START_PROGRESSION.chords[0]!;
 const BEATS_PER_BAR = 4;
 /** 1小節に2つのコードを置くとき、後半のコードに切り替える拍（0始まり。3拍目） */
 const SPLIT_BEAT = 2;
@@ -360,7 +363,10 @@ function sectionMove(engine: Engine): Progression | null {
 /** 区切りの前の小節で、Jevに「続けるか、どの進行へ移るか」を聞くための情報。移れる進行が無ければ聞かない */
 function sectionQuestion(engine: Engine, chords: readonly string[], target: number): SoloRequest["section"] {
   const current = engine.progression?.name ?? null;
-  const options = sectionOptions(chords, current).map((progression) => ({ id: progression.id!, mood: progression.mood! }));
+  const options = sectionOptions(chords, current).map((progression) => {
+    const bias = sectionBias(progression);
+    return { id: progression.id!, mood: progression.mood!, ...(bias === 1 ? {} : { bias }) };
+  });
   if (options.length === 0) return undefined;
   const currentMood = current ? progressionByName(current)?.mood : undefined;
   return {
@@ -976,7 +982,8 @@ export function useSession(): Session {
         beatCount: 0,
         pendingSwitch: null,
         autoSplit: null,
-        progression: null,
+        // 最初から基本の進行に乗る
+        progression: { name: START_PROGRESSION.name, since: 1 },
         pressed: null,
         struck: null,
         struckAt: null,
