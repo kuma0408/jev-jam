@@ -677,3 +677,39 @@ describe("generatePhraseBars（掛け合い）", () => {
     expect(bar!.memo.reply).toBeUndefined();
   });
 });
+
+describe("generatePhraseBars（区切りで進行を移るか）", () => {
+  const section = {
+    current: "王道進行",
+    currentMood: "Bright but wistful.",
+    barsOn: 16,
+    options: [
+      { id: "just-the-two", mood: "Smooth, mellow neo soul." },
+      { id: "i-vi-ii-v", mood: "The classic jazz turnaround." },
+    ],
+  };
+
+  it("区切りの前の小節では、続けるか、どの進行へ移るかをJevに選ばせる", async () => {
+    const { client, calls } = scriptedClient({ ...picks, section: "just-the-two" });
+    const [bar] = await generatePhraseBars(client, { ...input, section });
+    expect(Object.keys(calls[0]!.questions.section!.criteria)).toEqual(["stay", "just-the-two", "i-vi-ii-v"]);
+    expect(calls[0]!.questions.section!.criteria.stay).toContain("Bright but wistful.");
+    expect(bar!.section).toEqual({ choice: "just-the-two", odds: { "just-the-two": 1 } });
+  });
+
+  it("いまの進行をどれくらい続けているかを、言葉で伝える", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, { ...input, section: { ...section, barsOn: 4 } });
+    expect(calls[0]!.state.current_progression).toMatch(/just started/i);
+    const long = scriptedClient(picks);
+    await generatePhraseBars(long.client, { ...input, section: { ...section, barsOn: 32 } });
+    expect(long.calls[0]!.state.current_progression).toMatch(/long time/i);
+  });
+
+  it("区切りでない小節では聞かない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, input);
+    expect(Object.keys(calls[0]!.questions)).not.toContain("section");
+    expect(bar!.section).toBeUndefined();
+  });
+});
