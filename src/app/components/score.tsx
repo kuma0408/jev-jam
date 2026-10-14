@@ -5,6 +5,8 @@
 import { useEffect, useRef } from "react";
 import { ENERGY, type Energy } from "../../lib/solo/energy.ts";
 import type { Session, SessionEvent, SessionStatus } from "../session/use-session.ts";
+import { themeFor } from "../../lib/visual/palette.ts";
+import { currentTheme, isThemeMoving, moveThemeTo } from "../visual/theme-store.ts";
 import { type Frame, type Mark, type YouMark, drawScore } from "./score-draw.ts";
 
 /**
@@ -28,6 +30,10 @@ const PIXELS_PER_SECOND = 110;
 const NOW_POSITION = 0.84;
 /** 1段の高さの上限を、幅の何分の1にするか。狭い画面で記号が大きくなりすぎないようにする */
 const WIDTH_PER_HALF_GAP = 32;
+/** コードが変わったときに、色が移ろいきるまでの時間（秒） */
+const THEME_CHORD_SECONDS = 1.6;
+/** 進行が移ったときに、色が移ろいきるまでの時間（秒） */
+const THEME_SECTION_SECONDS = 0.9;
 /** 押さえずに鳴らした音（コードの札など）を描く長さ（秒） */
 const SHORT_SECONDS = 0.3;
 
@@ -98,6 +104,7 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
         musicFont,
         displayFont,
         reducedMotion: motionQuery.matches,
+        theme: currentTheme(),
       };
       context.clearRect(0, 0, width, height);
       drawScore(view, marks);
@@ -116,7 +123,7 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
 
     const tick = () => {
       draw();
-      frame = marks.length > 0 && !motionQuery.matches ? requestAnimationFrame(tick) : 0;
+      frame = (marks.length > 0 || isThemeMoving()) && !motionQuery.matches ? requestAnimationFrame(tick) : 0;
     };
     const wake = () => {
       if (motionQuery.matches) draw();
@@ -137,6 +144,8 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
         holding = null;
       } else if (event.kind === "bar") {
         marks.push({ kind: "bar", at, chord: event.chord, ...(event.section ? { section: event.section } : {}) });
+        // 色を、いま乗っている進行とコードに合わせて移ろわせる。進行が移ったときは速めに大きく変える
+        moveThemeTo(themeFor(event.progression ?? null, event.chord), event.section ? THEME_SECTION_SECONDS : THEME_CHORD_SECONDS);
       } else {
         return;
       }

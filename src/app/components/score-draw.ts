@@ -2,6 +2,7 @@
 // あなたの和音は押している間だけ伸びる青い光の帯、Jevのソロは金色の光の線で描く。
 // 「幾何学模様」「波紋と粒」と見比べて、この「光の帯と線」を選んだ（ADR 0034）。
 import { stepOf } from "../../lib/music/staff.ts";
+import { type Hsl, type Theme, hslToRgb } from "../../lib/visual/palette.ts";
 
 /** あなたが押さえた和音。end は離した時刻で、押さえている間は null */
 export type YouMark = { kind: "you"; start: number; end: number | null; pitches: number[] };
@@ -32,16 +33,20 @@ export type Frame = {
   displayFont: string;
   /** 動きを減らす設定か */
   reducedMotion: boolean;
+  /** いまの色。進行とコードに合わせて移ろう */
+  theme: Theme;
 };
 
 /** ト音記号の五線の5本の線の位置（ミ・ソ・シ・レ・ファ） */
 export const STAFF_LINES = [2, 4, 6, 8, 10];
-/** Jevの旋律の色（RGB）。伴奏の青と対になる、真鍮の楽器のような金色 */
-const GOLD = "226, 146, 26";
-/** 光の芯の色。白に近い明るい金 */
-const GOLD_CORE = "255, 231, 170";
-/** 光のにじみの色。赤みのある橙 */
-const GOLD_GLOW = "236, 110, 40";
+/**
+ * 描く色（"r, g, b" の形）。1コマごとに、いまの色（Frame.theme）から決め直す（applyTheme）。
+ * JEV: Jevの旋律 / JEV_CORE: 光の芯 / JEV_GLOW: 光のにじみ / YOU: あなたの和音
+ */
+let JEV = "226, 146, 26";
+let JEV_CORE = "255, 231, 170";
+let JEV_GLOW = "236, 110, 40";
+let YOU = "42, 98, 242";
 /** 鳴り始めに広がる光の輪が消えるまでの時間（秒） */
 const BLOOM_SECONDS = 0.6;
 /** Jevの音と音の間がこれ以上空いたら、旋律の線を切る（秒） */
@@ -53,11 +58,21 @@ const COLORS = {
   ink: "#17132e",
   inkSoft: "#55516b",
   line: "#7b7890",
-  blue: "#2a62f2",
   red: "#cf2e25",
-  mustard: "#d99a1e",
-  purple: "#7d3be6",
 };
+
+const rgb = (color: Hsl) => hslToRgb(color).join(", ");
+
+/** いまの色から、このコマで描く色を決める */
+function applyTheme(theme: Theme) {
+  JEV = rgb(theme.secondary);
+  JEV_CORE = rgb({ h: theme.secondary.h, s: 100, l: 90 });
+  JEV_GLOW = rgb({ h: (theme.secondary.h + 345) % 360, s: 90, l: 55 });
+  YOU = rgb(theme.primary);
+  COLORS.ink = `rgb(${rgb(theme.deep)})`;
+  COLORS.inkSoft = `rgb(${rgb({ ...theme.deep, l: 35 })})`;
+  COLORS.line = `rgb(${rgb({ ...theme.deep, s: 15, l: 55 })})`;
+}
 
 /** 音の高さの縦位置。フラットの付く音は、上の音との間に置く */
 function pitchY(frame: Frame, pitch: number): number {
@@ -108,7 +123,7 @@ function chordNames(frame: Frame, marks: readonly Mark[], size: number, color: s
       const chordWidth = context.measureText(mark.chord).width;
       context.save();
       context.font = `700 ${Math.round(size * 0.5)}px ${frame.displayFont}, "Helvetica Neue", Arial, sans-serif`;
-      context.fillStyle = `rgb(${GOLD})`;
+      context.fillStyle = `rgb(${JEV})`;
       context.fillText(`→ ${mark.section}`, x + 14 + chordWidth, frame.yOf(TOP_STEP));
       context.restore();
     }
@@ -156,11 +171,11 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
       if (pitch === top) {
         const thickness = half * 1.3;
         const gradient = context.createLinearGradient(x0, 0, x1, 0);
-        gradient.addColorStop(0, "rgba(42, 98, 242, 0.35)");
-        gradient.addColorStop(1, "rgba(42, 98, 242, 0.95)");
+        gradient.addColorStop(0, `rgba(${YOU}, 0.35)`);
+        gradient.addColorStop(1, `rgba(${YOU}, 0.95)`);
         context.save();
         context.globalAlpha = fade;
-        context.shadowColor = "rgba(42, 98, 242, 0.55)";
+        context.shadowColor = `rgba(${YOU}, 0.55)`;
         context.shadowBlur = mark.end === null ? 22 : 10;
         context.fillStyle = gradient;
         context.beginPath();
@@ -169,7 +184,7 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
         context.restore();
       } else {
         context.globalAlpha = 0.35 * fade;
-        context.fillStyle = COLORS.blue;
+        context.fillStyle = `rgb(${YOU})`;
         context.fillRect(x0, y - 1, x1 - x0, 2);
       }
     }
@@ -224,14 +239,14 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
   context.lineCap = "round";
   context.lineJoin = "round";
   context.lineWidth = half * 0.9;
-  context.strokeStyle = fadeGradient(GOLD_GLOW);
+  context.strokeStyle = fadeGradient(JEV_GLOW);
   context.globalAlpha = 0.28;
   context.filter = frame.reducedMotion ? "none" : `blur(${Math.round(half * 0.35)}px)`;
   tracePhrases();
   context.filter = "none";
   context.globalAlpha = 1;
   context.lineWidth = Math.max(2, half * 0.22);
-  context.strokeStyle = fadeGradient(GOLD);
+  context.strokeStyle = fadeGradient(JEV);
   tracePhrases();
 
   // 音の鳴り始め: 光の輪が広がって消え、小さな光の点が残る
@@ -244,7 +259,7 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
     if (age < BLOOM_SECONDS && !frame.reducedMotion) {
       const progress = age / BLOOM_SECONDS;
       context.globalAlpha = (1 - progress) * (0.4 + 0.6 * note.strength);
-      context.strokeStyle = `rgb(${GOLD})`;
+      context.strokeStyle = `rgb(${JEV})`;
       context.lineWidth = Math.max(1.5, half * 0.2);
       context.beginPath();
       context.arc(x, y, half * (0.6 + progress * 2.6 * (0.5 + note.strength)), 0, Math.PI * 2);
@@ -252,9 +267,9 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
     }
     const radius = half * (0.32 + 0.3 * note.strength);
     const glow = context.createRadialGradient(x, y, 0, x, y, radius * 2.6);
-    glow.addColorStop(0, `rgba(${GOLD_CORE}, 1)`);
-    glow.addColorStop(0.35, `rgba(${GOLD}, 0.85)`);
-    glow.addColorStop(1, `rgba(${GOLD_GLOW}, 0)`);
+    glow.addColorStop(0, `rgba(${JEV_CORE}, 1)`);
+    glow.addColorStop(0.35, `rgba(${JEV}, 0.85)`);
+    glow.addColorStop(1, `rgba(${JEV_GLOW}, 0)`);
     context.globalAlpha = (0.5 + 0.5 * note.strength) * fade;
     context.fillStyle = glow;
     context.beginPath();
@@ -270,8 +285,8 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
     const radius = half * (1.4 + latest.strength);
     const head = context.createRadialGradient(x, y, 0, x, y, radius);
     head.addColorStop(0, "rgba(255, 255, 255, 0.95)");
-    head.addColorStop(0.25, `rgba(${GOLD}, 0.8)`);
-    head.addColorStop(1, `rgba(${GOLD_GLOW}, 0)`);
+    head.addColorStop(0.25, `rgba(${JEV}, 0.8)`);
+    head.addColorStop(1, `rgba(${JEV_GLOW}, 0)`);
     context.globalAlpha = 1;
     context.fillStyle = head;
     context.beginPath();
@@ -288,4 +303,7 @@ function drawRibbon(frame: Frame, marks: readonly Mark[]) {
 }
 
 /** 演奏の流れを1コマ描く */
-export const drawScore = drawRibbon;
+export function drawScore(frame: Frame, marks: readonly Mark[]) {
+  applyTheme(frame.theme);
+  drawRibbon(frame, marks);
+}

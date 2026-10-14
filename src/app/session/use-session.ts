@@ -86,8 +86,11 @@ const JAM_BOOST_DB = 4;
 
 /** 音が実際に鳴るタイミングで届く通知。背景の演出などに使う */
 export type SessionEvent =
-  /** section は、この小節から別の定番進行へ移ったときの、移った先の進行の名前 */
-  | { kind: "bar"; bar: number; chord: string; section?: string }
+  /**
+   * 小節の頭と、小節の途中でコードが変わったところ。progression は、いま乗っている定番進行のID（あれば）。
+   * section は、この小節から別の定番進行へ移ったときの、移った先の進行の名前
+   */
+  | { kind: "bar"; bar: number; chord: string; progression?: string; section?: string }
   /** beat は小節内の拍（0〜3） */
   | { kind: "beat"; beat: number }
   /** ソロの1音。velocity は強さ（0〜1） */
@@ -374,6 +377,12 @@ function sectionQuestion(engine: Engine, target: number): SoloRequest["section"]
     barsOn: engine.progression ? target - engine.progression.since : 0,
     options,
   };
+}
+
+/** 通知に添える、いま乗っている定番進行のID。画面の色を進行ごとに変えるのに使う */
+function progressionIdOf(engine: Engine): { progression?: string } {
+  const id = engine.progression ? progressionByName(engine.progression.name)?.id : undefined;
+  return id ? { progression: id } : {};
 }
 
 /** 区切りでJevが返した確率を、画面の記録に出す短い文にする */
@@ -752,7 +761,7 @@ export function useSession(): Session {
             ...entries,
           ].slice(0, LOG_LIMIT),
         );
-        emit({ kind: "bar", bar, chord: current, ...(movedTo ? { section: movedTo.name } : {}) });
+        emit({ kind: "bar", bar, chord: current, ...progressionIdOf(engine), ...(movedTo ? { section: movedTo.name } : {}) });
       }, time);
     },
     [countTaps, emit, prepare, revoiceHeld],
@@ -785,7 +794,7 @@ export function useSession(): Session {
         // 弾いたコードから進める先を、すぐ鍵盤に出す。続けて何度でも弾ける
         setCandidates(next);
         setSelected(target);
-        emit({ kind: "bar", bar: plan.bar, chord: target });
+        emit({ kind: "bar", bar: plan.bar, chord: target, ...progressionIdOf(engine) });
       }, time);
     },
     [emit, revoiceHeld],
