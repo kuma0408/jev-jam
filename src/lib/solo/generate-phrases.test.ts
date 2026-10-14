@@ -713,3 +713,37 @@ describe("generatePhraseBars（区切りで進行を移るか）", () => {
     expect(bar!.section).toBeUndefined();
   });
 });
+
+describe("generatePhraseBars（区切りの移り先の選ばれやすさ）", () => {
+  /** 区切りの質問にだけ、決まった確率を返すクライアント */
+  const sectionClient: DecisionClient = {
+    name: "fake",
+    async decide(_state, questions) {
+      const answers: Record<string, ChoiceAnswer> = {};
+      for (const [id, item] of Object.entries(questions)) {
+        const labels = Object.keys(item.criteria);
+        answers[id] =
+          id === "section"
+            ? { choice: "stay", probabilities: { stay: 0.5, "royal-road": 0.25, marusa: 0.25 } }
+            : { choice: labels[0]!, probabilities: { [labels[0]!]: 1 } };
+      }
+      return answers;
+    },
+  };
+  const options = [
+    { id: "royal-road", mood: "Bright." },
+    { id: "marusa", mood: "Urban." },
+  ];
+
+  it("移り先に倍率（bias）が付いていれば、その分だけ選ばれやすくする。画面に出す確率はJevが返したまま", async () => {
+    const plain = await generatePhraseBars(sectionClient, { ...input, section: { current: null, barsOn: 0, options } }, () => 0.6);
+    expect(plain[0]!.section!.choice).toBe("royal-road");
+    const biased = await generatePhraseBars(
+      sectionClient,
+      { ...input, section: { current: null, barsOn: 0, options: [options[0]!, { ...options[1]!, bias: 10 }] } },
+      () => 0.6,
+    );
+    expect(biased[0]!.section!.choice).toBe("marusa");
+    expect(biased[0]!.section!.odds).toEqual({ stay: 0.5, "royal-road": 0.25, marusa: 0.25 });
+  });
+});
