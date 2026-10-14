@@ -1483,3 +1483,13 @@ th {
     translate: none;
   }
 }
+
+/* 押したときのエフェクトの層。画面全体に重ね、クリックは下へ通す */
+.flourish-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}

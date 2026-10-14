@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BarLogPanel } from "./components/bar-log.tsx";
 import { ControlDock } from "./components/control-dock.tsx";
 import { MelodyPads, PAD_KEY_CODES } from "./components/melody-pads.tsx";
+import { FlourishLayer } from "./components/flourish-layer.tsx";
 import { ParticleField } from "./components/particle-field.tsx";
 import { Score, TAP_STEP_HIGH, TAP_STEP_LOW } from "./components/score.tsx";
 import { NOTE_KEY_CODES } from "./components/piano.tsx";
@@ -101,6 +102,7 @@ export default function Page() {
   return (
     <>
       <ParticleField subscribe={session.subscribe} energy={session.liveEnergy} />
+      <FlourishLayer subscribe={session.subscribe} />
       <main className="shell">
         <header className="top">
           <h1 className="brand">Jev Session</h1>

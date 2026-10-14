@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import { ENERGY, type Energy } from "../../lib/solo/energy.ts";
 import type { Session, SessionEvent, SessionStatus } from "../session/use-session.ts";
 import { themeFor } from "../../lib/visual/palette.ts";
+import { notePress } from "../visual/pointer.ts";
 import { currentTheme, isThemeMoving, moveThemeTo } from "../visual/theme-store.ts";
 import { type Frame, type Mark, type YouMark, drawScore } from "./score-draw.ts";
 
@@ -204,6 +205,8 @@ export function Score({ subscribe, status, energy, keyboardStep, onStart, onPres
           event.currentTarget.setPointerCapture(event.pointerId);
           const rect = event.currentTarget.getBoundingClientRect();
           const step = geometry(rect.width, rect.height).stepAt(event.clientY - rect.top);
+          // エフェクトの層に、押した位置を伝える
+          notePress(event.clientX, event.clientY, 1 - (event.clientY - rect.top) / rect.height);
           onPress(Math.min(TAP_STEP_HIGH, Math.max(TAP_STEP_LOW, step)));
         }}
         onPointerUp={onRelease}
