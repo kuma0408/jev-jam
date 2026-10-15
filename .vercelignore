@@ -1,0 +1,11 @@
+# 秘密情報はアップロードしない（値はVercelの環境変数で渡す）
+.env
+.env.*
+!.env.example
+
+# ビルドに不要なもの
+.next/
+node_modules/
+spikes/
+docs/
+.playwright-mcp/

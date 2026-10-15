@@ -28,6 +28,9 @@ IDとパスワードは環境変数 `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` �
 - 本番ビルドで、認証なし・パスワード違いは401、正しければ200になることをcurlで確認した。APIも認証がなければ401になった
 - 本番（`NODE_ENV=production`）では `mock: true` が効かないので、公開URLで操作すると毎回本物のJevが呼ばれる
 - 固定パスワードは平文比較で、総当たり対策もない。即日閉じる前提での割り切り
+- `pnpx vercel deploy --prod` で約40秒で公開できた。本番URLでも同じく401/200を確認した
+- Vercel CLIは `.env` を標準ではアップロード対象から外さないので、`.vercelignore` で除外した
+- Vercel標準の保護（Vercel Authentication）はプレビューURLだけにかかり、本番URLはBasic認証だけで入れた
 
 ## 勉強会メモ
 
