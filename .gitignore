@@ -27,3 +27,6 @@ next-env.d.ts
 
 # ブラウザ自動操作の出力
 .playwright-mcp/
+
+# Vercel CLIが作るプロジェクト紐付け
+.vercel/
