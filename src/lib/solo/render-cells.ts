@@ -40,6 +40,9 @@ const STEPS_PER_OCTAVE = 7;
 // 強弱の幅は広く取る。以前は 0.48〜0.86 で、どの小節も似た強さに聞こえた
 const BASE_VELOCITY: Record<Dynamics, number> = { soft: 0.4, medium: 0.64, loud: 0.9 };
 
+/** 強弱の動きで、いちばん弱いところの倍率。0.6 だと「音量が単調」と言われたので広げた */
+const SHAPE_FLOOR = 0.35;
+
 /**
  * 小節の中の位置（0〜1）での、強さの倍率。いちばん強いところを1にそろえる。
  * 以前はクレッシェンドの終わりを1.2にしていて、強い小節では途中で上限（1）に届き、残りが平らになっていた
@@ -47,12 +50,12 @@ const BASE_VELOCITY: Record<Dynamics, number> = { soft: 0.4, medium: 0.64, loud:
 function shapeLevel(shape: Shape, position: number): number {
   switch (shape) {
     case "crescendo":
-      return 0.6 + 0.4 * position;
+      return SHAPE_FLOOR + (1 - SHAPE_FLOOR) * position;
     case "decrescendo":
-      return 1 - 0.4 * position;
+      return 1 - (1 - SHAPE_FLOOR) * position;
     case "surge":
       // 真ん中で頂点
-      return 0.7 + 0.3 * (1 - Math.abs(position - 0.5) * 2);
+      return 0.55 + 0.45 * (1 - Math.abs(position - 0.5) * 2);
     default:
       return 1;
   }
@@ -140,6 +143,27 @@ function velocityOf(note: CellNote, startBeats: number, options: RenderOptions):
   return Math.min(ceiling, Math.max(MIN_VELOCITY, level * metric * accent));
 }
 
+/** フレーズの終わりとみなす、音の後の無音の長さ（拍） */
+const PHRASE_GAP_BEATS = 1;
+/** フレーズの終わりの音から順に（後ろから）掛ける、強さの倍率 */
+const CLOSING_FACTORS = [0.7, 0.82, 0.92];
+
+/**
+ * 休みの直前の数音を、後ろほど弱くする。管楽器奏者が息を吐き切るようにフレーズを閉じ、デクレッシェンドが自然に増える。
+ * 小節の終わりまで鳴っている音は、次の小節で続くかもしれないので弱めない。長さを切り詰める前の音に対して使う
+ */
+function closePhrases(notes: SoloNote[]): void {
+  notes.forEach((note, index) => {
+    const nextStart = notes[index + 1]?.startBeats ?? BEATS_PER_BAR;
+    const silence = nextStart - (note.startBeats + note.durationBeats);
+    if (silence < PHRASE_GAP_BEATS) return;
+    CLOSING_FACTORS.forEach((factor, back) => {
+      const target = notes[index - back];
+      if (target && !target.tie) target.velocity = Math.max(MIN_VELOCITY, target.velocity * factor);
+    });
+  });
+}
+
 /**
  * 前半と後半の型を、コードに合わせた1小節ぶんの音に直す。
  * 音の高さは度数から、強さは強弱の指定と拍の位置から決める。
@@ -182,6 +206,8 @@ export function renderCells(cells: readonly [Cell, Cell], chord: string, options
       reference = pitch;
     }
   });
+
+  closePhrases(notes);
 
   // 単旋律の楽器なので、次の音が始まったら前の音を切る。最後の音は小節の終わりで切る
   notes.forEach((note, index) => {
