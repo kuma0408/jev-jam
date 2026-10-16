@@ -40,6 +40,8 @@ export type SoloMemo = {
   relation?: string;
   /** cells の方式: 直前の小節の、小節内での強さの動き */
   intensity?: string;
+  /** cells の方式: 直前の小節の終わりの音量。次の小節をこの音量から始めて、境目で急に変わらないようにする */
+  level?: number;
   /** cells の方式: いまの4小節のまとまりの形（どこを吹いてどこを休むか）のID */
   shape?: string;
   /** cells の方式: いまの4小節のまとまりの、高さの流れのID */

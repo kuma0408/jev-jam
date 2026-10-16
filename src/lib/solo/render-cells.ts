@@ -5,10 +5,10 @@ import type { Cell, CellNote } from "./cells.ts";
 
 export type Dynamics = "soft" | "medium" | "loud";
 /**
- * 小節の中での強さの動き。
- * terraced: 前半は強く、後半は急に弱く / surge: 真ん中へ向けて盛り上がり、また引く
+ * 小節の中での強さの動き。surge: 真ん中へ向けて盛り上がり、また引く。
+ * 「前半だけ強く、後半で急に弱く」もあったが、急に小さくなるのが不自然なので外した
  */
-export type Shape = "steady" | "crescendo" | "decrescendo" | "terraced" | "surge";
+export type Shape = "steady" | "crescendo" | "decrescendo" | "surge";
 
 export type RenderOptions = {
   /** 直前に鳴っていた音。ここから近い高さでフレーズを始める */
@@ -26,6 +26,11 @@ export type RenderOptions = {
   allowTie?: boolean;
   /** 音の大きさの倍率。伴奏の質感で、しっとりなら小さく、激しいほど大きくする。省略時は1 */
   velocityScale?: number;
+  /**
+   * 前の小節の終わりの音量（barEndLevel）。指定すると、小節の頭はこの音量から始めて、
+   * 半小節かけてこの小節の音量へ移る。小節の境目で音量が急に変わらないようにするため
+   */
+  startLevel?: number;
 };
 
 const BEATS_PER_CELL = 2;
@@ -35,21 +40,37 @@ const STEPS_PER_OCTAVE = 7;
 // 強弱の幅は広く取る。以前は 0.48〜0.86 で、どの小節も似た強さに聞こえた
 const BASE_VELOCITY: Record<Dynamics, number> = { soft: 0.4, medium: 0.64, loud: 0.9 };
 
-/** 小節の中の位置（0〜1）での、強さの倍率 */
+/**
+ * 小節の中の位置（0〜1）での、強さの倍率。いちばん強いところを1にそろえる。
+ * 以前はクレッシェンドの終わりを1.2にしていて、強い小節では途中で上限（1）に届き、残りが平らになっていた
+ */
 function shapeLevel(shape: Shape, position: number): number {
   switch (shape) {
     case "crescendo":
-      return 0.62 + 0.58 * position;
+      return 0.6 + 0.4 * position;
     case "decrescendo":
-      return 1.2 - 0.58 * position;
-    case "terraced":
-      return position < 0.5 ? 1.15 : 0.6;
+      return 1 - 0.4 * position;
     case "surge":
       // 真ん中で頂点
-      return 0.7 + 0.5 * (1 - Math.abs(position - 0.5) * 2);
+      return 0.7 + 0.3 * (1 - Math.abs(position - 0.5) * 2);
     default:
       return 1;
   }
+}
+
+/** 前の小節の終わりの音量から、この小節の音量へ移るのにかける長さ（小節の中の割合）。半小節 */
+const JOIN_LENGTH = 0.5;
+
+/** 小節の中の位置での音量（拍の位置やアクセントを掛ける前）。前の小節の終わりから、半小節かけてなめらかにつなぐ */
+function levelAt(position: number, options: RenderOptions): number {
+  const own = BASE_VELOCITY[options.dynamics] * shapeLevel(options.shape, position) * (options.velocityScale ?? 1);
+  if (options.startLevel === undefined || position >= JOIN_LENGTH) return own;
+  return options.startLevel + (own - options.startLevel) * (position / JOIN_LENGTH);
+}
+
+/** 小節の終わりの音量。次の小節を、この音量から始めるために使う */
+export function barEndLevel(options: Pick<RenderOptions, "dynamics" | "shape" | "velocityScale">): number {
+  return BASE_VELOCITY[options.dynamics] * shapeLevel(options.shape, 1) * (options.velocityScale ?? 1);
 }
 
 // 裏拍を表拍より強くするのがジャズの8分音符のアクセント
@@ -109,14 +130,14 @@ function chooseRootPitch(
 }
 
 function velocityOf(note: CellNote, startBeats: number, options: RenderOptions): number {
-  const shape = shapeLevel(options.shape, startBeats / BEATS_PER_BAR);
+  const level = levelAt(startBeats / BEATS_PER_BAR, options);
   const fraction = note.at - Math.floor(note.at);
   const metric = fraction === 0 ? ONBEAT_FACTOR : fraction === 0.5 ? OFFBEAT_FACTOR : 1;
   const accent = note.accent === "ghost" ? GHOST_FACTOR : note.accent === "accent" ? ACCENT_FACTOR : 1;
-  const scale = options.velocityScale ?? 1;
-  // 大きくする倍率のときは、ふだんの上限（1）を超えてよい。上限で頭打ちになると、激しくしても大きく聞こえない
-  const ceiling = Math.max(1, scale);
-  return Math.min(ceiling, Math.max(MIN_VELOCITY, BASE_VELOCITY[options.dynamics] * shape * metric * accent * scale));
+  // 大きくする倍率のときは、ふだんの上限（1）を超えてよい。上限で頭打ちになると、激しくしても大きく聞こえない。
+  // 前の小節が大きかったときも、そこから下りてくる間は同じ上限にする
+  const ceiling = Math.max(1, options.velocityScale ?? 1, options.startLevel ?? 0);
+  return Math.min(ceiling, Math.max(MIN_VELOCITY, level * metric * accent));
 }
 
 /**

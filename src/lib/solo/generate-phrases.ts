@@ -16,7 +16,7 @@ import {
   registerTarget,
 } from "./phrase-plan.ts";
 import type { ChoiceQuestion } from "./questions.ts";
-import { type Dynamics, type Shape, renderCells } from "./render-cells.ts";
+import { type Dynamics, type Shape, barEndLevel, renderCells } from "./render-cells.ts";
 import {
   RHYTHMS,
   type Rhythm,
@@ -132,21 +132,9 @@ const SHAPES: Record<Shape, string> = {
   steady: "Keep the same intensity through the bar.",
   crescendo: "Start gently and grow louder toward the end of the bar.",
   decrescendo: "Start strong and fade away toward the end of the bar.",
-  terraced: "Play the first half strongly, then drop suddenly to a much softer second half.",
   surge: "Swell up to a peak in the middle of the bar, then pull back.",
 };
 
-/**
- * 盛り上がりごとの、強弱の選ばれやすさ。
- * 以前はもっと強く寄せていて、「ゆったり」では91%が medium になり、小節ごとの強弱の差が無かった。
- * 寄せ方を弱め、直前の小節と同じ強さも選ばれにくくして、小節ごとの対比を作る
- */
-const DYNAMICS_BIAS: Record<Energy, Record<Dynamics, number>> = {
-  1: { soft: 2.5, medium: 1, loud: 0.3 },
-  2: { soft: 1.3, medium: 1.2, loud: 0.7 },
-  3: { soft: 0.7, medium: 1.2, loud: 1.3 },
-  4: { soft: 0.3, medium: 1, loud: 2.5 },
-};
 
 /** 直前に使ったものは、この倍率で確率を下げる */
 const RECENT_PENALTY = 0.3;
@@ -521,16 +509,10 @@ export async function generatePhraseBars(
         : pickContour(towardCall(relation === "contrast" ? contrasted(contourOdds) : contourOdds), used);
     return { rhythm, contour };
   })();
-  const dynamicsBias = DYNAMICS_BIAS[energy];
-  // 直前の小節と同じ強さ・同じ動きは選ばれにくくして、小節ごとの対比を作る
-  const dynamics = sampleFromDistribution(
-    Object.fromEntries(
-      Object.entries(
-        penalizeRecent(first.dynamics!.probabilities, input.memo.dynamics ? [input.memo.dynamics] : []),
-      ).map(([id, probability]) => [id, probability * (dynamicsBias[id as Dynamics] ?? 1)]),
-    ),
-    random,
-  ) as Dynamics;
+  // 小節の強さは、Jevが返した確率のまま抽選する。
+  // 以前は盛り上がりで重みを掛け、直前と同じ強さも選ばれにくくしていたが、小節ごとに強さが入れ替わって
+  // 急に小さくなるのが不自然だった。盛り上がりは合図の文でJevに伝わっている
+  const dynamics = sampleFromDistribution(first.dynamics!.probabilities, random) as Dynamics;
   const shape = sampleFromDistribution(
     penalizeRecent(first.shape!.probabilities, input.memo.intensity ? [input.memo.intensity] : []),
     random,
@@ -593,6 +575,8 @@ export async function generatePhraseBars(
       allowTie: input.sustained === true && fitsChord(heldPitch(chord), chord),
       // 伴奏の質感で、音の大きさの幅を広げる
       ...(touchVelocity(touch) === 1 ? {} : { velocityScale: touchVelocity(touch) }),
+      // 前の小節の終わりの音量から、半小節かけてこの小節の音量へつなぐ
+      ...(input.memo.level === undefined ? {} : { startLevel: input.memo.level }),
     };
     const notes = renderCells(composed, chord, render);
     return {
@@ -616,6 +600,7 @@ export async function generatePhraseBars(
         history: [...history.filter((bar) => bar.chord !== ""), { chord, cells }].slice(-MAX_HISTORY),
         ...(relation ? { relation } : {}),
         intensity: shape,
+        level: barEndLevel(render),
         ...(phraseShape ? { shape: phraseShape.id } : {}),
         ...(arcId ? { arc: arcId } : {}),
         ...(pastShapes.length > 0 ? { pastShapes } : {}),

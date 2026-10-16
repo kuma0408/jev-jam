@@ -118,7 +118,7 @@ function fail(reason: string): never {
 
 function parseMemo(value: unknown): SoloMemo {
   if (typeof value !== "object" || value === null) fail("本体がオブジェクトではない");
-  const { cells, dynamics, choices, history, relation, intensity, shape, arc, pastShapes, pastArcs, reply } = value as Record<
+  const { cells, dynamics, choices, history, relation, intensity, shape, arc, pastShapes, pastArcs, reply, level } = value as Record<
     string,
     unknown
   >;
@@ -158,6 +158,11 @@ function parseMemo(value: unknown): SoloMemo {
     const { id, energy } = (typeof reply === "object" && reply !== null ? reply : {}) as Record<string, unknown>;
     if (!isReplyId(id) || !isEnergy(energy)) fail("memo.reply");
     memo.reply = { id, energy };
+  }
+  if (level !== undefined) {
+    // 直前の小節の終わりの音量。伴奏の質感の倍率（最大1.5）を掛けた値なので、0〜2 を受け付ける
+    if (typeof level !== "number" || !(level >= 0 && level <= 2)) fail("memo.level");
+    memo.level = level;
   }
   if (dynamics !== undefined) {
     if (typeof dynamics !== "string" || !/^[a-z-]{1,20}$/.test(dynamics)) fail("memo.dynamics");
