@@ -1,7 +1,9 @@
 import { type DecisionClient, createJevClient, createMockClient } from "../../../lib/jev/client.ts";
+import { createRuleClient } from "../../../lib/jev/rule-client.ts";
 import { NOTE_NAMES } from "../../../lib/music/chord.ts";
 import { KNOWN_CHORDS } from "../../../lib/progression/candidates.ts";
 import {
+  DECIDERS,
   SOLO_STRATEGIES,
   type SoloBar,
   type SoloMemo,
@@ -40,7 +42,13 @@ export async function POST(request: Request): Promise<Response> {
   const apiKey = process.env.TYPESAFE_API_KEY;
   // 動作確認のときは、キーがあってもダミーを使える（Jevのトークンを使わないため）。本番では受け付けない
   const useMock = !apiKey || (body.mock === true && process.env.NODE_ENV !== "production");
-  const client = useMock ? createMockClient() : createJevClient(apiKey);
+  // ルールのモードはJevを呼ばないので、課金が無く、本番でも使える
+  const client =
+    body.decider === "rules"
+      ? createRuleClient({ energy: body.energy, barInPhrase: body.barInPhrase, ...(body.section ? { barsOn: body.section.barsOn } : {}) })
+      : useMock
+        ? createMockClient()
+        : createJevClient(apiKey!);
 
   // 候補すべての分を先に作る（ユーザーが選ぶ前に用意しておくため）
   const settled = await generateAll(client, body);
@@ -231,6 +239,7 @@ function parseRequest(value: unknown): SoloRequest {
     sustained = false,
     retargetable = false,
     mock = false,
+    decider = "jev",
     trade,
     section,
   } = value as Record<string, unknown>;
@@ -253,6 +262,8 @@ function parseRequest(value: unknown): SoloRequest {
   if (!isMidiPitch(low) || !isMidiPitch(high) || high - low < 12) fail("range.low / range.high");
 
   if (typeof sustained !== "boolean" || typeof retargetable !== "boolean") fail("sustained / retargetable は真偽値");
+  const deciderValue = DECIDERS.find((option) => option === decider);
+  if (!deciderValue) fail("decider は jev か rules");
 
   const memo = parseMemo((value as Record<string, unknown>).memo);
 
@@ -263,6 +274,7 @@ function parseRequest(value: unknown): SoloRequest {
     sustained,
     retargetable,
     mock: mock === true,
+    decider: deciderValue,
     ...(trade === undefined ? {} : { trade: parseTrade(trade) }),
     ...(section === undefined ? {} : { section: parseSection(section) }),
     memo,

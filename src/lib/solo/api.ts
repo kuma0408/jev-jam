@@ -29,6 +29,10 @@ export type SoloNote = {
 };
 
 /** 次の小節を依頼するときに送り返す、直前の小節の記録 */
+/** 判断する人。jev: Jevに聞く / rules: Jevを呼ばずにルールで確率を作る */
+export type Decider = "jev" | "rules";
+export const DECIDERS: readonly Decider[] = ["jev", "rules"];
+
 export type SoloMemo = {
   /** cells の方式: [前半のリズム, 前半の動き, 後半のリズム, 後半の動き] のID */
   cells?: string[];
@@ -126,6 +130,10 @@ export type SoloRequest = {
    * 本番（NODE_ENV=production）では無視する
    */
   mock?: boolean;
+  /**
+   * 判断する人。rules なら、Jevを呼ばずにルールで確率を作る（Jevとの聴き比べ用）。本番でも使える。省略時は jev
+   */
+  decider?: Decider;
   /** 掛け合いでの役割。掛け合いでなければ省く */
   trade?: Trade;
   /** 区切りの前の小節なら、進行を続けるか移るかの質問 */
