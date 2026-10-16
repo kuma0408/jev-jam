@@ -200,3 +200,27 @@ describe("accompaniment", () => {
     });
   });
 });
+
+describe("accompaniment（進行が移るときのドラムの合図）", () => {
+  const rides = (events: ReturnType<typeof accompaniment>) => events.filter((event) => event.part === "ride");
+
+  it("移る前の小節では、後半を16分音符で刻み、だんだん強くする（フィル）", () => {
+    const fill = rides(accompaniment("Gm7", { bar: 7, fill: true }));
+    const late = fill.filter((event) => event.startBeats >= 2);
+    expect(late.map((event) => event.startBeats)).toEqual([2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75]);
+    for (let i = 1; i < late.length; i++) expect(late[i]!.velocity).toBeGreaterThan(late[i - 1]!.velocity);
+  });
+
+  it("新しい進行に入った小節の頭で、シンバルを1発鳴らす", () => {
+    const entered = accompaniment("Fmaj7", { bar: 9, crash: true });
+    const crashes = entered.filter((event) => event.part === "crash");
+    expect(crashes).toHaveLength(1);
+    expect(crashes[0]!.startBeats).toBe(0);
+  });
+
+  it("ふだんの小節では、フィルもシンバルも入れない", () => {
+    const plain = accompaniment("Fmaj7", { bar: 6 });
+    expect(plain.some((event) => event.part === "crash")).toBe(false);
+    expect(rides(plain).some((event) => event.startBeats === 2.25)).toBe(false);
+  });
+});

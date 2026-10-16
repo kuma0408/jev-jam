@@ -39,12 +39,23 @@ describe("移り先にできる進行", () => {
     expect(names).not.toContain("王道進行");
   });
 
-  it("移る前の小節には、移り先の最初のコードへ導くセブンス（5度上のコード）を置く", () => {
-    expect(leadInFor(progressionById("i-vi-ii-v")!)).toBe("G7");
-    expect(leadInFor(progressionById("komuro")!)).toBe("E7");
-    expect(leadInFor(progressionById("marusa")!)).toBe("C7");
+  it("移る前の小節には、移り先の最初のコードへ向かうツー・ファイブを半分ずつ置く", () => {
+    // 前半は全音上のマイナーセブンス（ii）、後半は5度上のセブンス（V）
+    expect(leadInFor(progressionById("i-vi-ii-v")!)).toEqual({ chord: "Dm7", then: "G7" });
+    expect(leadInFor(progressionById("marusa")!)).toEqual({ chord: "Gm7", then: "C7" });
+    expect(leadInFor(progressionById("ii-v-i-vi7")!)).toEqual({ chord: "Em7", then: "A7" });
+  });
+
+  it("ii にあたるコードを扱えないときは、これまでどおり5度上のセブンスだけを置く", () => {
+    // Am7 への ii は Bm7 だが、コードの一覧に無い
+    expect(leadInFor(progressionById("komuro")!)).toEqual({ chord: "E7" });
+  });
+
+  it("導くコードは、どれもコードの一覧にある", () => {
     for (const progression of PROGRESSIONS.filter((item) => item.id)) {
-      expect(KNOWN_CHORDS).toContain(leadInFor(progression));
+      const { chord, then } = leadInFor(progression);
+      expect(KNOWN_CHORDS).toContain(chord);
+      if (then) expect(KNOWN_CHORDS).toContain(then);
     }
   });
 
