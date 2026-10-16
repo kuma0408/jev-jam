@@ -131,6 +131,8 @@ describe("generatePhraseBars", () => {
       dynamics: "loud",
       history: [{ chord: "Dm7", cells }],
       intensity: "crescendo",
+      // 強いクレッシェンドの終わりの音量（次の小節はここから始める）
+      level: 0.9,
       shape: "p-build",
       arc: "a-low",
     });
