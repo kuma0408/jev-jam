@@ -707,6 +707,20 @@ describe("generatePhraseBars（区切りで進行を移るか）", () => {
     expect(long.calls[0]!.state.current_progression).toMatch(/long time/i);
   });
 
+  it("いまの進行は、日本語の名前ではなく英語の雰囲気の説明で伝える（Jevは英語のほうが精度が高い）", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, { ...input, section });
+    expect(calls[0]!.state.current_progression).toContain("Bright but wistful.");
+    expect(calls[0]!.state.current_progression).not.toContain("王道進行");
+  });
+
+  it("雰囲気の説明が無い進行は、名前を出さずに決まった英語で伝える", async () => {
+    const { client, calls } = scriptedClient(picks);
+    const { currentMood: _, ...withoutMood } = section;
+    await generatePhraseBars(client, { ...input, section: withoutMood });
+    expect(calls[0]!.state.current_progression).toMatch(/^A free-flowing progression\./);
+  });
+
   it("区切りでない小節では聞かない", async () => {
     const { client, calls } = scriptedClient(picks);
     const [bar] = await generatePhraseBars(client, input);
