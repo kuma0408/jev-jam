@@ -26,7 +26,7 @@ import {
   sectionOptions,
 } from "../../lib/progression/sections.ts";
 import { aimPitch, fitsChord } from "../../lib/solo/aim.ts";
-import type { SoloBar, SoloMemo, SoloNote, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
+import type { Decider, SoloBar, SoloMemo, SoloNote, SoloRequest, SoloResponse, SoloStrategy } from "../../lib/solo/api.ts";
 import { padPitches } from "../../lib/music/pads.ts";
 import { type PlayedNote, type Turn, TURN_BARS, prepareBeat, summarizeCall, turnOf } from "../../lib/solo/call.ts";
 import { type Energy, type Press, RESTING_ENERGY, type Touch, compTouch, touchEnergy } from "../../lib/solo/energy.ts";
@@ -69,6 +69,8 @@ export type SessionSettings = {
   breath: number;
   /** 掛け合い。true なら、Jevとユーザーが2小節ずつ交代で弾く。false なら、Jevがずっとソロを取る */
   trade: boolean;
+  /** 判断する人。rules なら、Jevを呼ばずにルールで確率を作る（Jevとの聴き比べ用） */
+  decider: Decider;
 };
 
 /** 自分で弾く音の高さ。自動の伴奏より1オクターブ上で、埋もれない音域 */
@@ -139,7 +141,7 @@ export type Session = {
   releaseChord: () => void;
   /** 次の小節のソロの準備にかかった時間。依頼中は null */
   readyMs: number | null;
-  /** 接続先。jev か mock */
+  /** 接続先。jev / mock / rules */
   clientName: string | null;
   error: string | null;
   /** 小節ごとの記録（新しい順） */
@@ -418,6 +420,7 @@ export function useSession(): Session {
     soloDb: 0,
     // 掛け合いは、旋律を弾くのが未経験者には難しすぎたので既定では使わない
     trade: false,
+    decider: "jev",
     breath: 0.6,
   });
   const [chord, setChord] = useState<string | null>(null);
@@ -486,7 +489,7 @@ export function useSession(): Session {
         engine.preparedAny = null;
       }
       setReadyMs(null);
-      const { bpm, strategy, voice, trade: trading } = settingsRef.current;
+      const { bpm, strategy, voice, trade: trading, decider } = settingsRef.current;
       const { energy, touch } = countTaps(engine);
       const { range } = SOLO_INSTRUMENTS[voice];
       // 掛け合いでは、これから作る小節が応えの1小節目か2小節目かを伝える。
@@ -513,6 +516,7 @@ export function useSession(): Session {
         retargetable,
         // アドレスに ?mock=1 を付けて開くと、Jevを呼ばずにダミーで動かす（動作確認用）
         mock: new URLSearchParams(window.location.search).has("mock"),
+        decider,
         ...(trade ? { trade } : {}),
         ...(section ? { section } : {}),
         memo,

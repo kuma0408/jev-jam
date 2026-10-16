@@ -2,13 +2,18 @@
 
 // テンポやソロの楽器など、演奏の設定をまとめた操作パネル。
 import { SOLO_INSTRUMENTS, SOLO_VOICES, type SoloVoice } from "../../lib/audio/instruments.ts";
-import type { SoloStrategy } from "../../lib/solo/api.ts";
+import type { Decider, SoloStrategy } from "../../lib/solo/api.ts";
 import { BPM_MAX, BPM_MIN, SOLO_DB_MAX, SOLO_DB_MIN, type Session } from "../session/use-session.ts";
 
 const STRATEGY_LABELS: Record<SoloStrategy, string> = {
   cells: "リズムと動きを選ぶ",
   batch: "1音ずつ（1回で8音）",
   "two-stage": "1音ずつ（方針→8音）",
+};
+
+const DECIDER_LABELS: Record<Decider, string> = {
+  jev: "Jev",
+  rules: "ルール（Jevを呼ばない）",
 };
 
 export function ControlDock({ settings, updateSettings }: Pick<Session, "settings" | "updateSettings">) {
@@ -66,6 +71,17 @@ export function ControlDock({ settings, updateSettings }: Pick<Session, "setting
           {SOLO_VOICES.map((voice) => (
             <option key={voice} value={voice}>
               {SOLO_INSTRUMENTS[voice].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span className="field-label">判断する人</span>
+        {/* Jevとルールで、ソロがどう変わるかを聴き比べる。ルールはJevを呼ばないので課金されない */}
+        <select value={settings.decider} onChange={(event) => updateSettings({ decider: event.target.value as Decider })}>
+          {(Object.keys(DECIDER_LABELS) as Decider[]).map((decider) => (
+            <option key={decider} value={decider}>
+              {DECIDER_LABELS[decider]}
             </option>
           ))}
         </select>

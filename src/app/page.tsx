@@ -141,7 +141,7 @@ export default function Page() {
           <dl className="meters">
             <div className="meter">
               <dt>接続先</dt>
-              <dd>{session.clientName === null ? "—" : session.clientName === "jev" ? "Jev" : "ダミー"}</dd>
+              <dd>{session.clientName === null ? "—" : ({ jev: "Jev", rules: "ルール" } as Record<string, string>)[session.clientName] ?? "ダミー"}</dd>
             </div>
             <div className="meter">
               <dt>次のソロの準備</dt>
