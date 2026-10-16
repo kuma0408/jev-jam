@@ -31,6 +31,7 @@ import { padPitches } from "../../lib/music/pads.ts";
 import { type PlayedNote, type Turn, TURN_BARS, prepareBeat, summarizeCall, turnOf } from "../../lib/solo/call.ts";
 import { type Energy, type Press, RESTING_ENERGY, type Touch, compTouch, touchEnergy } from "../../lib/solo/energy.ts";
 import { pitchAtStep, voicingUnder } from "../../lib/music/staff.ts";
+import { brightnessHz, soloLevel } from "../../lib/audio/loudness.ts";
 import { type NoteExpression, planExpression } from "../../lib/solo/expression.ts";
 import { renderCells } from "../../lib/solo/render-cells.ts";
 import { swingBeats, swingRatioFor } from "../../lib/solo/swing.ts";
@@ -403,10 +404,6 @@ function describeSection(odds: Record<string, number>, moved: Progression | null
   return `進行 ${moved ? `→ ${moved.name}` : "このまま"}（${ranked.join(" / ")}）`;
 }
 
-/** 強さ（0〜1）に応じたフィルターの開き具合。弱い音はこもらせ、強い音は明るくする */
-function brightnessHz(velocity: number): number {
-  return 700 + velocity * velocity * 7300;
-}
 
 export function useSession(): Session {
   const engineRef = useRef<Engine | null>(null);
@@ -884,7 +881,8 @@ export function useSession(): Session {
           pitch: note.pitch,
           time: start,
           duration: durationSeconds,
-          velocity: note.velocity,
+          // 弱い音を持ち上げてから鳴らす。強弱の順番はそのまま
+          velocity: soloLevel(note.velocity),
           expression: plan.expressions[index]!,
           open,
         });
