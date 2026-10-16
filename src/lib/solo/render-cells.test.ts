@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Cell } from "./cells.ts";
-import { renderCells } from "./render-cells.ts";
+import { barEndLevel, renderCells } from "./render-cells.ts";
 
 const range = { low: 53, high: 84 };
 const plain = { dynamics: "medium", shape: "steady" } as const;
@@ -196,6 +196,38 @@ describe("renderCells", () => {
     // 表拍どうしで比べる（0拍目・2拍目・3拍目）
     expect(surge[4]!.velocity).toBeGreaterThan(surge[0]!.velocity);
     expect(surge[4]!.velocity).toBeGreaterThan(surge[6]!.velocity);
+  });
+
+  it("強いクレッシェンドでも、小節の終わりまで上限に届かずに上がり続ける", () => {
+    // 3拍目の裏と4拍目の裏（どちらも裏拍）
+    const late = cell([
+      { at: 0.5, dur: 0.5, step: 0 },
+      { at: 1.5, dur: 0.5, step: 0 },
+    ]);
+    const notes = renderCells([REST, late], "Dm7", { previousPitch: 62, ...range, dynamics: "loud", shape: "crescendo" });
+    expect(notes[1]!.velocity).toBeGreaterThan(notes[0]!.velocity);
+    expect(notes[1]!.velocity).toBeLessThan(1);
+  });
+
+  it("前の小節の終わりの音量から始めて、半小節かけてこの小節の音量へ移る", () => {
+    const line = [cell(eighths([0, 0, 0, 0])), cell(eighths([0, 0, 0, 0]))] as const;
+    const options = { previousPitch: 62, ...range, dynamics: "loud", shape: "steady" } as const;
+    const own = renderCells(line, "Dm7", options);
+    const joined = renderCells(line, "Dm7", { ...options, startLevel: 0.3 });
+    // 頭の音は前の小節の終わりに近い弱さ（表拍の倍率 0.94 を掛ける）
+    expect(joined[0]!.velocity).toBeCloseTo(0.3 * 0.94, 2);
+    // 2拍目の頭は、前の小節の音量とこの小節の音量のちょうど中間
+    expect(joined[2]!.velocity).toBeCloseTo(((0.3 + 0.9) / 2) * 0.94, 2);
+    // 後半はこの小節の音量どおり
+    expect(joined[4]!.velocity).toBeCloseTo(own[4]!.velocity, 5);
+    expect(joined[7]!.velocity).toBeCloseTo(own[7]!.velocity, 5);
+  });
+
+  it("小節の終わりの音量を求められる（次の小節のつなぎに使う）", () => {
+    expect(barEndLevel({ dynamics: "loud", shape: "steady" })).toBeCloseTo(0.9, 5);
+    expect(barEndLevel({ dynamics: "loud", shape: "decrescendo" })).toBeLessThan(barEndLevel({ dynamics: "loud", shape: "steady" }));
+    // 伴奏の質感による倍率も含める
+    expect(barEndLevel({ dynamics: "loud", shape: "steady", velocityScale: 1.5 })).toBeCloseTo(1.35, 5);
   });
 
   it("持ち越しを禁じると、持ち越しの音だけを落として、続きの音は鳴らす", () => {
