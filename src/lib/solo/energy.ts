@@ -62,6 +62,17 @@ export type Press = { at: number; end: number | null };
 const SUSTAINED_MAX_PRESSES = 3;
 /** しっとりと見なす、1回あたりの平均の長さ（拍） */
 const SUSTAINED_BEATS = 1;
+/**
+ * しっとりと見なす、1回あたりの平均の長さの下限（秒）。
+ * 拍だけで測ると、速いテンポ（200BPMで1拍0.3秒）では少し押さえただけでしっとりになり、ソロが静かになりすぎた
+ */
+const SUSTAINED_MIN_SECONDS = 0.6;
+/**
+ * 1秒あたりに押した回数で見る、active と busy の境目。120BPM（1小節2秒）で3回・6回にあたる。
+ * 速いテンポでは1小節が短く、回数だけでは激しく弾いても busy に届かないので、回数と速さの届きやすいほうで決める
+ */
+const ACTIVE_PER_SECOND = 1.5;
+const BUSY_PER_SECOND = 3;
 
 /**
  * 直前1小節（windowSeconds 秒）の伴奏の質感を、押した回数と伸ばした長さから決める。
@@ -71,8 +82,13 @@ export function compTouch(presses: readonly Press[], now: number, windowSeconds:
   const recent = presses.filter((press) => (press.end ?? now) >= now - windowSeconds);
   if (recent.length === 0) return "none";
   const averageSeconds = recent.reduce((sum, press) => sum + ((press.end ?? now) - press.at), 0) / recent.length;
-  if (recent.length <= SUSTAINED_MAX_PRESSES && averageSeconds >= SUSTAINED_BEATS * beatSeconds) return "sustained";
-  return touchOf(recent.length);
+  const sustainedSeconds = Math.max(SUSTAINED_BEATS * beatSeconds, SUSTAINED_MIN_SECONDS);
+  if (recent.length <= SUSTAINED_MAX_PRESSES && averageSeconds >= sustainedSeconds) return "sustained";
+  const perSecond = recent.length / windowSeconds;
+  const byRate: Touch = perSecond >= BUSY_PER_SECOND ? "busy" : perSecond >= ACTIVE_PER_SECOND ? "active" : "light";
+  const byCount = touchOf(recent.length);
+  const order: readonly Touch[] = ["light", "active", "busy"];
+  return order.indexOf(byRate) > order.indexOf(byCount) ? byRate : byCount;
 }
 
 /** 伴奏の質感から決める盛り上がり。しっとりなら静か、連打なら激しい。弾いていなければ RESTING_ENERGY */

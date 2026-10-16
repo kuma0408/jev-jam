@@ -3,7 +3,7 @@ import { sampleFromDistribution } from "../music/sample.ts";
 import { aimPitch, fitsChord } from "./aim.ts";
 import type { SectionQuestion, SoloBar, SoloMemo, Trade } from "./api.ts";
 import { REPLIES, type ReplyId, describeCall, replyEnergy } from "./call.ts";
-import { touchRange, touchRegister, touchVelocity } from "./touch-style.ts";
+import { tempoVelocity, touchRange, touchRegister, touchVelocity } from "./touch-style.ts";
 import type { Cell } from "./cells.ts";
 import { CONTOURS, type Contour, biasByDirection, contourById, favorLeaps } from "./contours.ts";
 import { ENERGY, type Energy, TOUCH_CUE, type Touch } from "./energy.ts";
@@ -564,6 +564,8 @@ export async function generatePhraseBars(
     // 伴奏が激しければ高い音域、しっとりなら低めを目指す。どちらでもなければ4小節の高さの流れに任せる
     const touch = input.touch ?? "none";
     const targetPitch = touchRegister(touch, input.range) ?? registerTarget(arcId, barInPhrase, input.range);
+    // 伴奏の質感とテンポの倍率のうち、大きいほうを使う（掛け合わせると大きくなりすぎる）
+    const velocityScale = Math.max(touchVelocity(touch), tempoVelocity(input.bpm));
     const render = {
       previousPitch: heldPitch(chord),
       // 伴奏が激しければ高い音域だけ、しっとりなら低めの音域で吹く
@@ -574,7 +576,7 @@ export async function generatePhraseBars(
       // 鳴っている音がこのコードに合わなければ、持ち越さない（小節の頭で切れる）
       allowTie: input.sustained === true && fitsChord(heldPitch(chord), chord),
       // 伴奏の質感で、音の大きさの幅を広げる
-      ...(touchVelocity(touch) === 1 ? {} : { velocityScale: touchVelocity(touch) }),
+      ...(velocityScale === 1 ? {} : { velocityScale }),
       // 前の小節の終わりの音量から、半小節かけてこの小節の音量へつなぐ
       ...(input.memo.level === undefined ? {} : { startLevel: input.memo.level }),
     };
