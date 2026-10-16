@@ -26,3 +26,16 @@ describe("POST /api/solo（メモの音量）", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("POST /api/solo（判断する人の切り替え）", () => {
+  it("decider が rules なら、Jevを呼ばずにルールで判断する", async () => {
+    const response = await post({ ...body({}), mock: false, decider: "rules" });
+    expect(response.status).toBe(200);
+    expect((await response.json()).client).toBe("rules");
+  });
+
+  it("decider に知らない値が来たら受け付けない", async () => {
+    const response = await post({ ...body({}), decider: "llm" });
+    expect(response.status).toBe(400);
+  });
+});
