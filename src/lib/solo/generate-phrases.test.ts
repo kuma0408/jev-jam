@@ -132,7 +132,7 @@ describe("generatePhraseBars", () => {
       history: [{ chord: "Dm7", cells }],
       intensity: "crescendo",
       // 強いクレッシェンドの終わりの音量（次の小節はここから始める）
-      level: 0.9,
+      level: 0.95,
       shape: "p-build",
       arc: "a-low",
     });
@@ -830,7 +830,7 @@ describe("generatePhraseBars（速いテンポの音量）", () => {
   it("速いテンポでは、伴奏を弾いていなくてもソロを大きめにする", async () => {
     const { client } = scriptedClient(picks);
     const [bar] = await generatePhraseBars(client, { ...input, bpm: 220 });
-    expect(bar!.plan!.render.velocityScale).toBeCloseTo(1.2, 5);
+    expect(bar!.plan!.render.velocityScale).toBeCloseTo(1.3, 5);
   });
 
   it("激しい伴奏の倍率のほうが大きければ、そちらを使う（掛け合わせない）", async () => {

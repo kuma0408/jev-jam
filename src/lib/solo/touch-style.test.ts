@@ -39,12 +39,12 @@ describe("touchRange（伴奏の質感で、ソロが使う音域を寄せる）
 });
 
 describe("tempoVelocity（テンポによる、ソロの音の大きさの底上げ）", () => {
-  it("140BPMまではそのまま。それより速いほど大きくし、220BPMで1.2倍に達する", () => {
+  it("140BPMまではそのまま。それより速いほど大きくし、220BPMで1.3倍に達する", () => {
     expect(tempoVelocity(80)).toBe(1);
     expect(tempoVelocity(140)).toBe(1);
-    expect(tempoVelocity(180)).toBeCloseTo(1.1, 5);
-    expect(tempoVelocity(220)).toBeCloseTo(1.2, 5);
-    expect(tempoVelocity(240)).toBeCloseTo(1.2, 5);
+    expect(tempoVelocity(180)).toBeCloseTo(1.15, 5);
+    expect(tempoVelocity(220)).toBeCloseTo(1.3, 5);
+    expect(tempoVelocity(240)).toBeCloseTo(1.3, 5);
   });
 });
 

@@ -218,17 +218,17 @@ describe("renderCells", () => {
     // 頭の音は前の小節の終わりに近い弱さ（表拍の倍率 0.94 を掛ける）
     expect(joined[0]!.velocity).toBeCloseTo(0.3 * 0.94, 2);
     // 2拍目の頭は、前の小節の音量とこの小節の音量のちょうど中間
-    expect(joined[2]!.velocity).toBeCloseTo(((0.3 + 0.9) / 2) * 0.94, 2);
+    expect(joined[2]!.velocity).toBeCloseTo(((0.3 + 0.95) / 2) * 0.94, 2);
     // 後半はこの小節の音量どおり
     expect(joined[4]!.velocity).toBeCloseTo(own[4]!.velocity, 5);
     expect(joined[7]!.velocity).toBeCloseTo(own[7]!.velocity, 5);
   });
 
   it("小節の終わりの音量を求められる（次の小節のつなぎに使う）", () => {
-    expect(barEndLevel({ dynamics: "loud", shape: "steady" })).toBeCloseTo(0.9, 5);
+    expect(barEndLevel({ dynamics: "loud", shape: "steady" })).toBeCloseTo(0.95, 5);
     expect(barEndLevel({ dynamics: "loud", shape: "decrescendo" })).toBeLessThan(barEndLevel({ dynamics: "loud", shape: "steady" }));
     // 伴奏の質感による倍率も含める
-    expect(barEndLevel({ dynamics: "loud", shape: "steady", velocityScale: 1.5 })).toBeCloseTo(1.35, 5);
+    expect(barEndLevel({ dynamics: "loud", shape: "steady", velocityScale: 1.5 })).toBeCloseTo(1.425, 5);
   });
 
   it("持ち越しを禁じると、持ち越しの音だけを落として、続きの音は鳴らす", () => {
@@ -252,7 +252,7 @@ describe("renderCells（音量の変化の幅）", () => {
   const options = { previousPitch: 62, ...range, dynamics: "loud" } as const;
 
   it("デクレッシェンドでは、小節の終わりで頭の半分より弱くなる", () => {
-    expect(barEndLevel({ dynamics: "loud", shape: "decrescendo" })).toBeLessThan(0.9 * 0.4);
+    expect(barEndLevel({ dynamics: "loud", shape: "decrescendo" })).toBeLessThan(0.95 * 0.4);
     const down = renderCells(line, "Dm7", { ...options, shape: "decrescendo" });
     // 表拍どうし（0拍目と3拍目）で比べる
     expect(down[6]!.velocity).toBeLessThan(down[0]!.velocity * 0.6);
