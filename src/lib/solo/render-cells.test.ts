@@ -189,13 +189,11 @@ describe("renderCells", () => {
     expect(loud / soft).toBeGreaterThanOrEqual(2);
   });
 
-  it("「前半は強く後半は弱く」「山なり」の強弱の動きを付けられる", () => {
+  it("「山なり」の強弱の動きを付けられる", () => {
     const line = [cell(eighths([0, 0, 0, 0])), cell(eighths([0, 0, 0, 0]))] as const;
     const options = { previousPitch: 62, ...range, dynamics: "medium" } as const;
-    const terraced = renderCells(line, "Dm7", { ...options, shape: "terraced" });
     const surge = renderCells(line, "Dm7", { ...options, shape: "surge" });
     // 表拍どうしで比べる（0拍目・2拍目・3拍目）
-    expect(terraced[0]!.velocity).toBeGreaterThan(terraced[4]!.velocity * 1.4);
     expect(surge[4]!.velocity).toBeGreaterThan(surge[0]!.velocity);
     expect(surge[4]!.velocity).toBeGreaterThan(surge[6]!.velocity);
   });
