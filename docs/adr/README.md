@@ -53,6 +53,6 @@
 | [0047](0047-retune-touch-volume-and-range.md) | しっとりの音量は下げず、激しいときは大きく、高すぎない音域にする | 設計判断 | Accepted | 2026-10-14 |
 | [0048](0048-deploy-vercel-with-basic-auth.md) | 当日だけVercel（Hobby）に置き、固定ID・パスワードのBasic認証で守る | 技術選定 | Accepted | 2026-10-15 |
 | [0049](0049-progression-in-english.md) | いまの進行は、日本語の名前ではなく英語の雰囲気の説明でJevに伝える | 設計判断 | Accepted | 2026-10-16 |
-| [0050](0050-smooth-dynamics-across-bars.md) | 強さはJevの確率のまま選び、前の小節の終わりの音量から半小節かけてつなぐ | 設計判断 | Accepted（強弱の倍率は 0051 で置き換え） | 2026-10-16 |
+| [0050](0050-smooth-dynamics-across-bars.md) | 強さはJevの確率のまま選び、前の小節の終わりの音量から半小節かけてつなぐ | 設計判断 | Accepted（強弱の倍率は 0052 で置き換え） | 2026-10-16 |
 | [0051](0051-pin-jev-model-version.md) | Jevのモデルを jev-1.14.0 に固定する | 技術選定 | Accepted | 2026-10-16 |
-| [0051](0051-wider-dynamics-and-fast-tempo-volume.md) | デクレッシェンドの幅を広げ、フレーズの終わりを弱め、速い曲ではソロを大きめにする | 設計判断 | Accepted | 2026-10-16 |
+| [0052](0052-wider-dynamics-and-fast-tempo-volume.md) | デクレッシェンドの幅を広げ、フレーズの終わりを弱め、速い曲ではソロを大きめにする | 設計判断 | Accepted | 2026-10-16 |
