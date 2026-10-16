@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChoiceAnswer, DecisionClient } from "../jev/client.ts";
 import { contourById } from "./contours.ts";
 import { biasByEnergy, generatePhraseBars, penalizeRecent, spaceBias } from "./generate-phrases.ts";
-import { renderCells } from "./render-cells.ts";
+import { barEndLevel, renderCells } from "./render-cells.ts";
 import { touchRange } from "./touch-style.ts";
 import { RHYTHMS, rhythmById } from "./rhythms.ts";
 
@@ -787,5 +787,39 @@ describe("generatePhraseBars（伴奏の質感で、音の大きさと音域を�
     const loud = await play("busy");
     const moved = renderCells(loud.plan!.cells, "G7", loud.plan!.render);
     expect(average(moved.map((note) => note.velocity))).toBeCloseTo(average(loud.notes.map((note) => note.velocity)), 1);
+  });
+});
+
+describe("generatePhraseBars（強さと、小節の境目の音量）", () => {
+  it("小節の強さは、Jevが返した確率のまま抽選する（盛り上がりや前の小節で重みを掛けない）", async () => {
+    const base = scriptedClient(picks).client;
+    // 強さだけ soft と loud を半々で返す
+    const client: DecisionClient = {
+      name: "fake",
+      async decide(state, questions) {
+        const answers = await base.decide(state, questions);
+        if (answers.dynamics) answers.dynamics = { choice: "soft", probabilities: { soft: 0.5, loud: 0.5 } };
+        return answers;
+      },
+    };
+    // 静かな盛り上がりで、前の小節も soft。重みを掛けると soft に寄るが、確率のままなら 0.6 の乱数で loud になる
+    const [bar] = await generatePhraseBars(client, { ...input, energy: 1, memo: { dynamics: "soft" } }, () => 0.6);
+    expect(bar!.plan!.render.dynamics).toBe("loud");
+  });
+
+  it("「前半だけ強く、後半で急に弱く」は強弱の動きの選択肢に出さない", async () => {
+    const { client, calls } = scriptedClient(picks);
+    await generatePhraseBars(client, input);
+    expect(Object.keys(calls[0]!.questions.shape!.criteria)).not.toContain("terraced");
+  });
+
+  it("小節の終わりの音量をメモに残し、次の小節はその音量から始める", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, input);
+    expect(bar!.memo.level).toBeCloseTo(barEndLevel(bar!.plan!.render), 5);
+
+    const next = scriptedClient(picks);
+    const [following] = await generatePhraseBars(next.client, { ...input, memo: bar!.memo });
+    expect(following!.plan!.render.startLevel).toBeCloseTo(bar!.memo.level!, 5);
   });
 });
