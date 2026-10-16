@@ -57,3 +57,4 @@
 | [0051](0051-pin-jev-model-version.md) | Jevのモデルを jev-1.14.0 に固定する | 技術選定 | Accepted | 2026-10-16 |
 | [0052](0052-wider-dynamics-and-fast-tempo-volume.md) | デクレッシェンドの幅を広げ、フレーズの終わりを弱め、速い曲ではソロを大きめにする | 設計判断 | Accepted | 2026-10-16 |
 | [0053](0053-two-five-lead-in-and-drum-cue.md) | 進行が移る前はツー・ファイブで導き、ドラムのフィルとシンバルで合図する | 設計判断 | Accepted | 2026-10-16 |
+| [0054](0054-rule-based-decider-mode.md) | Jevを呼ばずにルールで確率を作るモードを足し、裏側の設定で切り替えられるようにする | 設計判断 | Accepted | 2026-10-16 |
