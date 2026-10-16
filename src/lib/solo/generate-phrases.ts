@@ -277,7 +277,8 @@ export async function generatePhraseBars(
     ...(input.memo.dynamics ? { previous_bar_volume: input.memo.dynamics } : {}),
     ...(input.section
       ? {
-          current_progression: `${input.section.current ?? "A free-flowing progression"}. ${progressionAge(input.section.barsOn)}`,
+          // 進行の名前は日本語なので渡さない。Jevは英語のほうが精度が高く、「丸サ進行」のような呼び名を知っている保証も無い
+          current_progression: `${input.section.currentMood ?? "A free-flowing progression."} ${progressionAge(input.section.barsOn)}`,
         }
       : {}),
   };
