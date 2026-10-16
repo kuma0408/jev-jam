@@ -85,7 +85,8 @@ describe("renderCells", () => {
   });
 
   it("裏拍を表拍より少し強くして、ジャズらしいアクセントにする", () => {
-    const notes = renderCells([cell(eighths([0, 0])), REST], "Dm7", { previousPitch: 62, ...range, ...plain });
+    // 休みの直前の音は弱めるので、フレーズが後半へ続く形で比べる
+    const notes = renderCells([cell(eighths([0, 0, 0, 0])), cell(eighths([0, 0, 0, 0]))], "Dm7", { previousPitch: 62, ...range, ...plain });
     expect(notes[1]!.velocity).toBeGreaterThan(notes[0]!.velocity);
   });
 
