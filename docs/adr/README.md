@@ -52,4 +52,4 @@
 | [0046](0046-wider-expression-by-touch.md) | 伴奏の質感で、ソロの音の大きさ・音域・ビブラートの幅を広げる | 設計判断 | Accepted | 2026-10-14 |
 | [0047](0047-retune-touch-volume-and-range.md) | しっとりの音量は下げず、激しいときは大きく、高すぎない音域にする | 設計判断 | Accepted | 2026-10-14 |
 | [0048](0048-deploy-vercel-with-basic-auth.md) | 当日だけVercel（Hobby）に置き、固定ID・パスワードのBasic認証で守る | 技術選定 | Accepted | 2026-10-15 |
-| [0048](0048-progression-in-english.md) | いまの進行は、日本語の名前ではなく英語の雰囲気の説明でJevに伝える | 設計判断 | Accepted | 2026-10-16 |
+| [0049](0049-progression-in-english.md) | いまの進行は、日本語の名前ではなく英語の雰囲気の説明でJevに伝える | 設計判断 | Accepted | 2026-10-16 |
