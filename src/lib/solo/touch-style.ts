@@ -15,10 +15,10 @@ export function touchVelocity(touch: Touch): number {
 /** テンポによる音量の底上げが始まるテンポと、上限に達するテンポ、その倍率 */
 const TEMPO_BOOST_FROM = 140;
 const TEMPO_BOOST_FULL = 220;
-const TEMPO_BOOST_MAX = 1.2;
+const TEMPO_BOOST_MAX = 1.3;
 
 /**
- * テンポによる、ソロの音の大きさの倍率。速いほど大きくする（上限1.2倍）。
+ * テンポによる、ソロの音の大きさの倍率。速いほど大きくする（上限1.3倍）。
  * 速い曲では押すのが追いつかず、伴奏の質感が静かな側に判定されやすい。それでもソロが小さくなりすぎないよう、底を上げる
  */
 export function tempoVelocity(bpm: number): number {

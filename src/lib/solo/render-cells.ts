@@ -38,7 +38,8 @@ const BEATS_PER_BAR = 4;
 const STEPS_PER_OCTAVE = 7;
 
 // 強弱の幅は広く取る。以前は 0.48〜0.86 で、どの小節も似た強さに聞こえた
-const BASE_VELOCITY: Record<Dynamics, number> = { soft: 0.4, medium: 0.64, loud: 0.9 };
+// 強弱の動きの幅を広げたら平均の音量が下がったので、基準を少し上げた（0.4 / 0.64 / 0.9 から）
+const BASE_VELOCITY: Record<Dynamics, number> = { soft: 0.45, medium: 0.7, loud: 0.95 };
 
 /** 強弱の動きで、いちばん弱いところの倍率。0.6 だと「音量が単調」と言われたので広げた */
 const SHAPE_FLOOR = 0.35;
