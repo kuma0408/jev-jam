@@ -45,7 +45,7 @@
 | [0039](0039-lower-tap-range.md) | 押せる和音を1オクターブ下（C3）まで広げる。低いところでは音を減らして濁らせない | 設計判断 | Accepted | 2026-10-14 |
 | [0040](0040-jev-moves-between-progressions.md) | 8小節ごとの区切りで、Jevが定番進行を続けるか、別の進行へ移るかを選ぶ | 設計判断 | Accepted（一部 0042 で置き換え） | 2026-10-14 |
 | [0041](0041-home-progressions.md) | カノン進行を外し、丸サ進行と Just the Two of Us進行を基本にする | 設計判断 | Accepted | 2026-10-14 |
-| [0042](0042-lead-in-chord-to-any-progression.md) | 導くコードを挟んで、どの進行へも移れるようにする。ジャズ寄りの進行を3つ足す | 設計判断 | Accepted | 2026-10-14 |
+| [0042](0042-lead-in-chord-to-any-progression.md) | 導くコードを挟んで、どの進行へも移れるようにする。ジャズ寄りの進行を3つ足す | 設計判断 | Accepted（導くコードは 0053 で置き換え） | 2026-10-14 |
 | [0043](0043-drop-stepwise-descent.md) | 順次下降を一覧から外す | 設計判断 | Accepted | 2026-10-14 |
 | [0044](0044-visual-refresh.md) | 文字をほぼ無くし、押すたびに弾けるエフェクトと、曲調で移ろう色にする | 設計判断 | Accepted | 2026-10-14 |
 | [0045](0045-quieter-more-varied-flourishes.md) | エフェクトを控えめにし、種類を5から12に増やす | 設計判断 | Accepted | 2026-10-14 |
@@ -56,3 +56,4 @@
 | [0050](0050-smooth-dynamics-across-bars.md) | 強さはJevの確率のまま選び、前の小節の終わりの音量から半小節かけてつなぐ | 設計判断 | Accepted（強弱の倍率は 0052 で置き換え） | 2026-10-16 |
 | [0051](0051-pin-jev-model-version.md) | Jevのモデルを jev-1.14.0 に固定する | 技術選定 | Accepted | 2026-10-16 |
 | [0052](0052-wider-dynamics-and-fast-tempo-volume.md) | デクレッシェンドの幅を広げ、フレーズの終わりを弱め、速い曲ではソロを大きめにする | 設計判断 | Accepted | 2026-10-16 |
+| [0053](0053-two-five-lead-in-and-drum-cue.md) | 進行が移る前はツー・ファイブで導き、ドラムのフィルとシンバルで合図する | 設計判断 | Accepted | 2026-10-16 |
