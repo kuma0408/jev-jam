@@ -4,7 +4,7 @@ import { chordTones, parseChord, pitchClassOf } from "../music/chord.ts";
 import { soloCandidates } from "../music/solo-candidates.ts";
 import type { Energy } from "../solo/energy.ts";
 
-export type BandPart = "bass" | "comp" | "ride";
+export type BandPart = "bass" | "comp" | "ride" | "crash";
 
 export type BandEvent = {
   part: BandPart;
@@ -26,6 +26,10 @@ export type AccompanimentOptions = {
   energy?: Energy;
   /** true ならベースの4拍目を返さない。次のコードが決まってから bassApproach で求める */
   deferLastBass?: boolean;
+  /** true なら、次の小節から別の進行へ移る。後半を16分音符でだんだん強く刻み、変わることを予告する */
+  fill?: boolean;
+  /** true なら、この小節から別の進行に入った。頭でシンバルを1発鳴らす */
+  crash?: boolean;
 };
 
 type CompHit = { at: number; dur: number; velocity: number };
@@ -216,8 +220,11 @@ export function compVoicing(chord: string): number[] {
   return compVoicings(chord)[0]!;
 }
 
+/** 進行が移る前の小節の後半に刻む、16分音符のフィル。だんだん強くする */
+const FILL_HITS = Array.from({ length: 8 }, (_, index) => ({ at: 2 + index * 0.25, velocity: 0.18 + index * 0.05 }));
+
 /** シンバルレガート（チン・チンチキ）。2拍目と4拍目を強く、4小節ごとに刻みを足して区切る */
-function ride(bar: number, energy: Energy): BandEvent[] {
+function ride(bar: number, energy: Energy, fill = false): BandEvent[] {
   // 静かなときは撫でる程度、激しいときは強く叩く
   const loudness = 0.55 + 0.15 * energy;
   const hits = [
@@ -228,7 +235,10 @@ function ride(bar: number, energy: Energy): BandEvent[] {
     { at: 3, velocity: 0.34 },
     { at: 3.5, velocity: 0.16 },
   ];
-  if (bar % BARS_PER_PHRASE === 0) {
+  if (fill) {
+    // 後半はフィルに置き換える
+    hits.splice(0, hits.length, ...hits.filter((hit) => hit.at < 2), ...FILL_HITS);
+  } else if (bar % BARS_PER_PHRASE === 0) {
     hits.push({ at: 2.5, velocity: 0.2 }, { at: 3.25, velocity: 0.26 }, { at: 3.75, velocity: 0.3 });
     hits.sort((a, b) => a.at - b.at);
   }
@@ -263,5 +273,9 @@ export function accompaniment(
     pitches: voicings[Math.min(voicings.length - 1, Math.floor(random() * voicings.length))]!,
     velocity: hit.velocity,
   }));
-  return [...bass(chord, options, energy), ...comp, ...ride(options.bar, energy)];
+  // 別の進行に入った小節の頭のシンバル。余韻を長く取る
+  const crash: BandEvent[] = options.crash
+    ? [{ part: "crash", startBeats: 0, durationBeats: 2, pitches: [], velocity: Math.min(1, 0.5 + 0.1 * energy) }]
+    : [];
+  return [...bass(chord, options, energy), ...comp, ...ride(options.bar, energy, options.fill), ...crash];
 }

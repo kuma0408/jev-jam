@@ -1,5 +1,6 @@
 // 8小節ごとの区切りで、別の定番進行へ移るためのルール。移るかどうかと、どこへ移るかはJevに選ばせる。
 import { NOTE_NAMES, parseChord } from "../music/chord.ts";
+import { KNOWN_CHORDS } from "./candidates.ts";
 import { PROGRESSIONS, type Progression } from "./library.ts";
 
 /** 区切りの長さ（小節）。定番の4小節の進行を2周したところ */
@@ -34,16 +35,21 @@ export function sectionOptions(current: string | null): Progression[] {
   return SECTION_PROGRESSIONS.filter((progression) => progression.name !== current);
 }
 
-/** 半音で数えた、5度上の音程 */
+/** 半音で数えた、5度上と全音上の音程 */
 const FIFTH_ABOVE = 7;
+const WHOLE_STEP_ABOVE = 2;
 
 /**
- * 移り先の最初のコードへ導くコード。最初のコードの5度上のセブンス（セカンダリードミナント）。
- * 例: Cmaj7 へは G7、Am7 へは E7。ジャズで行き先を予告するときの定番の方法
+ * 移り先の最初のコードへ導くコード。小節の前半に全音上のマイナーセブンス（ii）、後半に5度上のセブンス（V）を置く。
+ * 例: Fmaj7 へは Gm7 → C7、Cmaj7 へは Dm7 → G7。ジャズで行き先を予告する定番の「ツー・ファイブ」。
+ * 以前は V だけを1小節置いていたが、切り替わりが急に聞こえた。
+ * ii にあたるコードが一覧に無いとき（Am7 への Bm7 など）は、V だけを置く
  */
-export function leadInFor(progression: Progression): string {
+export function leadInFor(progression: Progression): { chord: string; then?: string } {
   const { root } = parseChord(progression.chords[0]!);
-  return `${NOTE_NAMES[(root + FIFTH_ABOVE) % 12]}7`;
+  const five = `${NOTE_NAMES[(root + FIFTH_ABOVE) % 12]}7`;
+  const two = `${NOTE_NAMES[(root + WHOLE_STEP_ABOVE) % 12]}m7`;
+  return KNOWN_CHORDS.includes(two) ? { chord: two, then: five } : { chord: five };
 }
 
 /**

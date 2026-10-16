@@ -229,6 +229,10 @@ type Engine = {
   rideNoise: import("tone").Noise;
   ride: import("tone").AmplitudeEnvelope;
   rideFilter: import("tone").Filter;
+  /** 別の進行に入った小節の頭で鳴らす、余韻の長いシンバル。ride と同じく鳴らしっぱなしのノイズから切り出す */
+  crashNoise: import("tone").Noise;
+  crash: import("tone").AmplitudeEnvelope;
+  crashFilter: import("tone").Filter;
   bar: number;
   /** これまでに鳴らしたコード（古い順） */
   history: string[];
@@ -590,8 +594,10 @@ export function useSession(): Session {
         const move = isSectionEnd(bar) ? sectionMove(engine) : null;
         how = "auto";
         if (move) {
-          current = leadInFor(move);
-          engine.autoSplit = null;
+          // 移り先へ向かうツー・ファイブ。後半のコードがあれば3拍目で切り替える
+          const leadIn = leadInFor(move);
+          current = leadIn.chord;
+          engine.autoSplit = leadIn.then ?? null;
           engine.pendingMove = move;
           leadingTo = move;
         } else if (isSectionStart(bar) && engine.pendingMove) {
@@ -698,7 +704,12 @@ export function useSession(): Session {
         bar,
         chord: current,
         // ベースの4拍目だけは、次のコードが決まるのを待って締切で決める
-        band: accompaniment(current, { bar, energy, deferLastBass: true }, replay(seeds)),
+        // 進行が移る前の小節はフィルで予告し、移った小節の頭でシンバルを鳴らす
+        band: accompaniment(
+          current,
+          { bar, energy, deferLastBass: true, fill: leadingTo !== null, crash: movedTo !== null },
+          replay(seeds),
+        ),
         solo,
         notes,
         expressions,
@@ -843,6 +854,8 @@ export function useSession(): Session {
           engine.bass.triggerAttackRelease(midi(event.pitches[0]!), duration, start, event.velocity);
         } else if (event.part === "comp") {
           engine.comp.triggerAttackRelease(event.pitches.map(midi), duration, start, event.velocity);
+        } else if (event.part === "crash") {
+          engine.crash.triggerAttackRelease(0.05, start, event.velocity);
         } else {
           engine.ride.triggerAttackRelease(0.02, start, event.velocity);
         }
@@ -942,6 +955,9 @@ export function useSession(): Session {
       engine.rideNoise,
       engine.ride,
       engine.rideFilter,
+      engine.crashNoise,
+      engine.crash,
+      engine.crashFilter,
     ]) {
       node.dispose();
     }
@@ -1000,6 +1016,9 @@ export function useSession(): Session {
         rideNoise: new tone.Noise("white"),
         ride: new tone.AmplitudeEnvelope({ attack: 0.001, decay: 0.08, sustain: 0, release: 0.02 }),
         rideFilter: new tone.Filter({ type: "highpass", frequency: 7000 }).connect(reverb),
+        crashNoise: new tone.Noise("pink"),
+        crash: new tone.AmplitudeEnvelope({ attack: 0.002, decay: 1.6, sustain: 0, release: 0.4 }),
+        crashFilter: new tone.Filter({ type: "highpass", frequency: 3500 }).connect(reverb),
         bar: 0,
         history: [],
         prepared: new Map(),
@@ -1032,6 +1051,9 @@ export function useSession(): Session {
       engine.rideNoise.chain(engine.ride, engine.rideFilter);
       engine.rideNoise.volume.value = -10;
       engine.rideNoise.start();
+      engine.crashNoise.chain(engine.crash, engine.crashFilter);
+      engine.crashNoise.volume.value = -12;
+      engine.crashNoise.start();
       engine.comp.volume.value = COMP_GAIN_DB;
       engine.jam.volume.value = COMP_GAIN_DB + JAM_BOOST_DB;
       engine.bass.volume.value = BASS_GAIN_DB;
