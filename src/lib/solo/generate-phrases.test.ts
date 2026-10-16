@@ -825,3 +825,17 @@ describe("generatePhraseBars（強さと、小節の境目の音量）", () => {
     expect(following!.plan!.render.startLevel).toBeCloseTo(bar!.memo.level!, 5);
   });
 });
+
+describe("generatePhraseBars（速いテンポの音量）", () => {
+  it("速いテンポでは、伴奏を弾いていなくてもソロを大きめにする", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, { ...input, bpm: 220 });
+    expect(bar!.plan!.render.velocityScale).toBeCloseTo(1.2, 5);
+  });
+
+  it("激しい伴奏の倍率のほうが大きければ、そちらを使う（掛け合わせない）", async () => {
+    const { client } = scriptedClient(picks);
+    const [bar] = await generatePhraseBars(client, { ...input, bpm: 220, touch: "busy" });
+    expect(bar!.plan!.render.velocityScale).toBeCloseTo(1.5, 5);
+  });
+});

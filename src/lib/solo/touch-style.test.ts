@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { touchRange, touchRegister, touchVelocity } from "./touch-style.ts";
+import { tempoVelocity, touchRange, touchRegister, touchVelocity } from "./touch-style.ts";
 
 const range = { low: 53, high: 77 };
 
@@ -37,3 +37,14 @@ describe("touchRange（伴奏の質感で、ソロが使う音域を寄せる）
     expect(touchRange("none", range)).toEqual(range);
   });
 });
+
+describe("tempoVelocity（テンポによる、ソロの音の大きさの底上げ）", () => {
+  it("140BPMまではそのまま。それより速いほど大きくし、220BPMで1.2倍に達する", () => {
+    expect(tempoVelocity(80)).toBe(1);
+    expect(tempoVelocity(140)).toBe(1);
+    expect(tempoVelocity(180)).toBeCloseTo(1.1, 5);
+    expect(tempoVelocity(220)).toBeCloseTo(1.2, 5);
+    expect(tempoVelocity(240)).toBeCloseTo(1.2, 5);
+  });
+});
+

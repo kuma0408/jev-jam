@@ -60,6 +60,30 @@ describe("compTouch（直前1小節の伴奏の質感）", () => {
     expect(compTouch([0.2, 0.5, 0.8, 1.1, 1.4, 1.7, 2].map((ago) => press(ago, 0.1)), now, window, beat)).toBe("busy");
   });
 
+  it("速いテンポでは、少し押さえただけではしっとりにしない（押さえた長さは秒でも測る）", () => {
+    // 200BPM: 1拍0.3秒、1小節1.2秒。0.4秒の押さえは1拍を超えるが、しっとりとは言えない
+    const fastBeat = 0.3;
+    expect(compTouch([press(1, 0.4)], now, fastBeat * 4, fastBeat)).toBe("light");
+    // 0.6秒以上押さえていれば、速いテンポでもしっとり
+    expect(compTouch([press(1.1, 0.8)], now, fastBeat * 4, fastBeat)).toBe("sustained");
+  });
+
+  it("速いテンポでは、1小節に押せる回数が少なくても、1秒あたりの回数が多ければ激しいとみなす", () => {
+    const fastBeat = 0.3;
+    // 1.2秒に4回（1秒に3回以上）。回数だけなら active だが、busy にする
+    expect(compTouch([0.1, 0.4, 0.7, 1.0].map((ago) => press(ago, 0.1)), now, fastBeat * 4, fastBeat)).toBe("busy");
+    // 1.2秒に2回（1秒に1.5回以上）は active
+    expect(compTouch([0.3, 0.9].map((ago) => press(ago, 0.1)), now, fastBeat * 4, fastBeat)).toBe("active");
+  });
+
+  it("遅いテンポでは、これまでどおり1小節の回数と拍の長さで決める", () => {
+    // 60BPM: 1拍1秒、1小節4秒
+    const slowBeat = 1;
+    expect(compTouch([press(3.5, 1.2), press(1.5, 1.2)], now, slowBeat * 4, slowBeat)).toBe("sustained");
+    expect(compTouch([3.5, 3, 2.5, 2, 1.5, 1].map((ago) => press(ago, 0.1)), now, slowBeat * 4, slowBeat)).toBe("busy");
+    expect(compTouch([3.5, 2].map((ago) => press(ago, 0.1)), now, slowBeat * 4, slowBeat)).toBe("light");
+  });
+
   it("しっとりした伴奏には、長い音で静かに歌うようJevに伝える", () => {
     expect(TOUCH_CUE.sustained).toMatch(/long/i);
     expect(TOUCH_CUE.busy).toMatch(/sixteenth/i);
