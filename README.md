@@ -38,7 +38,7 @@ Jev also decides:
 
 The accompaniment, drums, and sound shaping run on rules, without Jev. There is also a rules-only mode that builds the probabilities without calling Jev, switchable from the settings.
 
-Every design decision is recorded in [docs/adr](docs/adr/README.md) — 55 records, in Japanese — including the options we rejected and the things that didn't work.
+Every design decision is recorded in [docs/adr](docs/adr/README.md) (in Japanese), including the options we rejected and the things that didn't work.
 
 ## Running locally
 
