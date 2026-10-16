@@ -245,3 +245,37 @@ describe("renderCells", () => {
     expect(renderCells([REST, REST], "Dm7", { previousPitch: 62, ...range, ...plain })).toEqual([]);
   });
 });
+
+describe("renderCells（音量の変化の幅）", () => {
+  const line = [cell(eighths([0, 0, 0, 0])), cell(eighths([0, 0, 0, 0]))] as const;
+  const options = { previousPitch: 62, ...range, dynamics: "loud" } as const;
+
+  it("デクレッシェンドでは、小節の終わりで頭の半分より弱くなる", () => {
+    expect(barEndLevel({ dynamics: "loud", shape: "decrescendo" })).toBeLessThan(0.9 * 0.4);
+    const down = renderCells(line, "Dm7", { ...options, shape: "decrescendo" });
+    // 表拍どうし（0拍目と3拍目）で比べる
+    expect(down[6]!.velocity).toBeLessThan(down[0]!.velocity * 0.6);
+  });
+
+  it("クレッシェンドでは、小節の頭が終わりの半分より弱い", () => {
+    const up = renderCells(line, "Dm7", { ...options, shape: "crescendo" });
+    expect(up[0]!.velocity).toBeLessThan(up[6]!.velocity * 0.6);
+  });
+
+  it("休みの直前の音ほど弱くして、フレーズを吐き切るように閉じる", () => {
+    const closing = renderCells([line[0], REST], "Dm7", { ...options, shape: "steady" });
+    const going = renderCells(line, "Dm7", { ...options, shape: "steady" });
+    // 休みの直前の3音は、続くフレーズの同じ音より弱く、後ろほど弱い
+    expect(closing[3]!.velocity).toBeLessThan(going[3]!.velocity);
+    expect(closing[3]!.velocity / going[3]!.velocity).toBeLessThan(closing[2]!.velocity / going[2]!.velocity);
+    expect(closing[2]!.velocity / going[2]!.velocity).toBeLessThan(closing[1]!.velocity / going[1]!.velocity);
+    // それより前の音は変えない
+    expect(closing[0]!.velocity).toBeCloseTo(going[0]!.velocity, 5);
+  });
+
+  it("小節の終わりまで鳴っている音は、次の小節で続くかもしれないので弱めない", () => {
+    const toTheEnd = renderCells([REST, line[1]], "Dm7", { ...options, shape: "steady" });
+    const steady = renderCells(line, "Dm7", { ...options, shape: "steady" });
+    expect(toTheEnd.at(-1)!.velocity).toBeCloseTo(steady.at(-1)!.velocity, 5);
+  });
+});
