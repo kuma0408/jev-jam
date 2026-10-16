@@ -4,13 +4,15 @@ English | [日本語](README.ja.md)
 
 Tap chords on a staff, and an AI saxophonist answers with an improvised solo in real time. A jam session that runs in your browser.
 
+![Screenshot: chords tapped on the staff, with Jev's solo drawn as a glowing line](docs/images/screenshot.png)
+
 The solo is shaped by [Jev](https://docs.typesafe.ai), a decision model from TypeSafe AI. Jev never writes out a melody. Instead, it makes many small calls in every bar — what rhythm the next half-bar takes, which way the line moves — and the app turns those calls into music. You don't need to play an instrument; tapping the screen is enough to play along with the band.
 
 ## How to play
 
 1. Tap the staff to start the band.
 2. Each tap plays a chord voiced with the tapped note on top. Hold to sustain it.
-3. Jev's solo scrolls past as a golden ribbon of light, following your comping.
+3. Jev's solo scrolls past as a glowing line, following your comping. Its color shifts with the mood of the tune.
 
 Tap higher and the band builds up, and the solo grows hotter with it. Short, choppy taps get a sharper solo; long held chords get a softer, breathier one.
 
