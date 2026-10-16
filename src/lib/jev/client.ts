@@ -15,7 +15,8 @@ export type DecisionClient = {
 
 const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 
-export function createJevClient(apiKey: string, model = "jev-latest"): DecisionClient {
+// エイリアス（jev-latest）は新版が出ると黙って切り替わり、調整した確率の前提が崩れるので版を固定する
+export function createJevClient(apiKey: string, model = "jev-1.14.0"): DecisionClient {
   return {
     name: "jev",
     async decide(state, questions) {
